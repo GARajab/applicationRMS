@@ -26,6 +26,23 @@ const parseExcelDate = (value: any): string | undefined => {
 
 // --- Components ---
 
+// 0. Loading Screen
+const LoadingScreen: React.FC = () => (
+  <div className="fixed inset-0 bg-slate-50 dark:bg-slate-900 z-[100] flex flex-col items-center justify-center animate-fade-in">
+    <div className="relative mb-8">
+      <div className="absolute inset-0 bg-blue-500/20 rounded-full blur-xl animate-pulse"></div>
+      <div className="w-20 h-20 bg-gradient-to-tr from-blue-600 to-indigo-600 rounded-2xl flex items-center justify-center shadow-2xl relative z-10 animate-bounce-subtle">
+        <Icons.Dashboard className="w-10 h-10 text-white animate-pulse" />
+      </div>
+    </div>
+    <h1 className="text-2xl font-bold text-slate-800 dark:text-white mb-2">Planning Dashboard</h1>
+    <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400">
+      <Icons.Spinner className="w-5 h-5 animate-spin text-blue-500" />
+      <span className="text-sm font-medium">Initializing system...</span>
+    </div>
+  </div>
+);
+
 // 1. Edit Record Modal
 const EditRecordModal: React.FC<{ 
   isOpen: boolean; 
@@ -70,7 +87,7 @@ const EditRecordModal: React.FC<{
   if (!isOpen || !record) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
       <div className="bg-white dark:bg-slate-800 w-full max-w-md rounded-2xl shadow-2xl flex flex-col animate-scale-in border border-slate-200 dark:border-slate-700">
         <div className="p-6 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center">
           <h2 className="text-xl font-bold text-slate-800 dark:text-white">Edit Record</h2>
@@ -86,7 +103,7 @@ const EditRecordModal: React.FC<{
               type="text" 
               value={formData.label}
               onChange={(e) => setFormData({...formData, label: e.target.value})}
-              className="w-full px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white focus:border-blue-500 outline-none"
+              className="w-full px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white focus:border-blue-500 outline-none transition-all focus:ring-2 focus:ring-blue-500/20"
             />
           </div>
 
@@ -96,7 +113,7 @@ const EditRecordModal: React.FC<{
               type="text" 
               value={formData.wayleaveNumber}
               onChange={(e) => setFormData({...formData, wayleaveNumber: e.target.value})}
-              className="w-full px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white focus:border-blue-500 outline-none"
+              className="w-full px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white focus:border-blue-500 outline-none transition-all focus:ring-2 focus:ring-blue-500/20"
             />
           </div>
 
@@ -105,7 +122,7 @@ const EditRecordModal: React.FC<{
             <select
               value={formData.status}
               onChange={(e) => setFormData({...formData, status: e.target.value})}
-              className="w-full px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white focus:border-blue-500 outline-none"
+              className="w-full px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white focus:border-blue-500 outline-none transition-all focus:ring-2 focus:ring-blue-500/20"
             >
               <option value="Pending">Pending</option>
               <option value="In Progress">In Progress</option>
@@ -115,25 +132,25 @@ const EditRecordModal: React.FC<{
             </select>
           </div>
 
-          <div className="flex items-center gap-3 py-2">
+          <div className="flex items-center gap-3 py-2 p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
             <input 
               type="checkbox" 
               id="requireUSP"
               checked={formData.requireUSP}
               onChange={(e) => setFormData({...formData, requireUSP: e.target.checked})}
-              className="w-5 h-5 rounded border-slate-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500"
+              className="w-5 h-5 rounded border-slate-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500 cursor-pointer"
             />
-            <label htmlFor="requireUSP" className="text-sm font-medium text-slate-700 dark:text-slate-300">Require USP?</label>
+            <label htmlFor="requireUSP" className="text-sm font-medium text-slate-700 dark:text-slate-300 cursor-pointer">Require USP?</label>
           </div>
 
           {formData.requireUSP && (
-            <div>
+            <div className="animate-fade-in-down">
               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Sent to USP Date</label>
               <input 
                 type="date" 
                 value={formData.sentToUSPDate}
                 onChange={(e) => setFormData({...formData, sentToUSPDate: e.target.value})}
-                className="w-full px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white focus:border-blue-500 outline-none"
+                className="w-full px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white focus:border-blue-500 outline-none transition-all focus:ring-2 focus:ring-blue-500/20"
               />
             </div>
           )}
@@ -149,7 +166,7 @@ const EditRecordModal: React.FC<{
           <button 
             onClick={handleSave}
             disabled={isSaving}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium flex items-center gap-2"
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium flex items-center gap-2 shadow-lg shadow-blue-500/30"
           >
             {isSaving ? <Icons.Spinner className="w-4 h-4 animate-spin" /> : <Icons.Save className="w-4 h-4" />}
             Save Changes
@@ -200,7 +217,7 @@ const Login: React.FC<{ onLogin: (user: User) => void }> = ({ onLogin }) => {
     <div className="min-h-screen flex items-center justify-center bg-slate-100 dark:bg-slate-900 p-4 transition-colors duration-200">
       <div className="bg-white dark:bg-slate-800 p-8 rounded-2xl shadow-xl w-full max-w-md border border-slate-200 dark:border-slate-700 animate-fade-in-up">
         <div className="text-center mb-8">
-          <div className="bg-blue-600 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-500/30">
+          <div className="bg-blue-600 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-500/30 animate-bounce-subtle">
             <Icons.Dashboard className="text-white w-8 h-8" />
           </div>
           <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Planning Dashboard</h1>
@@ -230,7 +247,7 @@ const Login: React.FC<{ onLogin: (user: User) => void }> = ({ onLogin }) => {
           </div>
 
           {error && (
-            <div className="p-3 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-200 text-sm rounded-lg flex items-center gap-2 border border-red-200 dark:border-red-800">
+            <div className="p-3 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-200 text-sm rounded-lg flex items-center gap-2 border border-red-200 dark:border-red-800 animate-shake">
               <Icons.Alert className="w-4 h-4" />
               {error}
             </div>
@@ -239,7 +256,7 @@ const Login: React.FC<{ onLogin: (user: User) => void }> = ({ onLogin }) => {
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl transition-all shadow-lg shadow-blue-600/30 flex items-center justify-center gap-2"
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl transition-all shadow-lg shadow-blue-600/30 flex items-center justify-center gap-2 active:scale-95"
           >
             {isLoading ? <Icons.Spinner className="animate-spin w-5 h-5" /> : 'Sign In'}
           </button>
@@ -311,12 +328,12 @@ const AIInsightModal: React.FC<{ isOpen: boolean; onClose: () => void; records: 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
       <div className="bg-white dark:bg-slate-800 w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col max-h-[80vh] animate-scale-in border border-slate-200 dark:border-slate-700">
         <div className="p-6 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center">
           <div className="flex items-center gap-3">
             <div className="bg-purple-100 dark:bg-purple-900/50 p-2 rounded-lg">
-              <Icons.AI className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+              <Icons.AI className="w-6 h-6 text-purple-600 dark:text-purple-400 animate-pulse" />
             </div>
             <h2 className="text-xl font-bold text-slate-800 dark:text-white">Gemini Insights</h2>
           </div>
@@ -329,10 +346,10 @@ const AIInsightModal: React.FC<{ isOpen: boolean; onClose: () => void; records: 
           {isAnalyzing ? (
              <div className="flex flex-col items-center justify-center py-12 text-slate-500 dark:text-slate-400">
                 <Icons.Spinner className="w-10 h-10 animate-spin text-purple-500 mb-4" />
-                <p>Analyzing {records.length} records...</p>
+                <p className="animate-pulse">Analyzing {records.length} records...</p>
              </div>
           ) : (
-            <div className="prose dark:prose-invert max-w-none">
+            <div className="prose dark:prose-invert max-w-none animate-fade-in-up">
               <p className="whitespace-pre-wrap text-slate-700 dark:text-slate-300 leading-relaxed">{response}</p>
             </div>
           )}
@@ -343,7 +360,7 @@ const AIInsightModal: React.FC<{ isOpen: boolean; onClose: () => void; records: 
             <input 
               type="text" 
               placeholder="Ask about zones, blocks, delays..." 
-              className="flex-1 px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:border-purple-500 focus:outline-none"
+              className="flex-1 px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:border-purple-500 focus:outline-none transition-all"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleAnalyze(query)}
@@ -351,9 +368,9 @@ const AIInsightModal: React.FC<{ isOpen: boolean; onClose: () => void; records: 
             <button 
               onClick={() => handleAnalyze(query)}
               disabled={!query.trim() || isAnalyzing}
-              className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors"
+              className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors flex items-center justify-center"
             >
-              <Icons.AI className="w-5 h-5" />
+              {isAnalyzing ? <Icons.Spinner className="w-5 h-5 animate-spin" /> : <Icons.AI className="w-5 h-5" />}
             </button>
           </div>
         </div>
@@ -365,43 +382,47 @@ const AIInsightModal: React.FC<{ isOpen: boolean; onClose: () => void; records: 
 // 5. File Upload (Updated for specific columns)
 const ExcelUploader: React.FC<{ onUpload: (data: any[]) => void }> = ({ onUpload }) => {
   const [isDragging, setIsDragging] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const processFile = (file: File) => {
+    setIsProcessing(true);
     const reader = new FileReader();
     reader.onload = (e) => {
       const data = e.target?.result;
       if (data) {
-        const workbook = XLSX.read(data, { type: 'binary' });
-        const sheetName = workbook.SheetNames[0];
-        const sheet = workbook.Sheets[sheetName];
-        const jsonData = XLSX.utils.sheet_to_json(sheet);
-        
-        // Filter and Map logic
-        const mappedData = jsonData
-          .filter((row: any) => {
-            const status = String(row['Status'] || '').trim().toLowerCase();
-            return status !== 'pending payment' && status !== 'canceled';
-          })
-          .map((row: any, index) => {
-            const requireUSPRaw = String(row['Require USP'] || row['require_usp'] || '').toLowerCase();
-            const requireUSP = requireUSPRaw === 'yes' || requireUSPRaw === 'true';
+        setTimeout(() => { // Simulate minimal processing time for animation
+          const workbook = XLSX.read(data, { type: 'binary' });
+          const sheetName = workbook.SheetNames[0];
+          const sheet = workbook.Sheets[sheetName];
+          const jsonData = XLSX.utils.sheet_to_json(sheet);
+          
+          const mappedData = jsonData
+            .filter((row: any) => {
+              const status = String(row['Status'] || '').trim().toLowerCase();
+              return status !== 'pending payment' && status !== 'canceled';
+            })
+            .map((row: any, index) => {
+              const requireUSPRaw = String(row['Require USP'] || row['require_usp'] || '').toLowerCase();
+              const requireUSP = requireUSPRaw === 'yes' || requireUSPRaw === 'true';
 
-            return {
-              label: row['Label'] || row['Title'] || `Imported ${index + 1}`,
-              status: row['Status'] || 'Pending',
-              block: row['Block'] || 'N/A',
-              zone: row['Zone'] || 'N/A',
-              scheduleStartDate: parseDateSafe(row['Schedule start date']),
-              wayleaveNumber: row['Wayleave number'] || '',
-              accountNumber: row['Account number'] || '',
-              referenceNumber: row['Reference Number'] || `REF-${Date.now()}-${index}`,
-              requireUSP: requireUSP,
-              sentToUSPDate: parseExcelDate(row['Sent to USP Date']),
-              createdAt: new Date().toISOString()
-            };
-          });
-        
-        onUpload(mappedData);
+              return {
+                label: row['Label'] || row['Title'] || `Imported ${index + 1}`,
+                status: row['Status'] || 'Pending',
+                block: row['Block'] || 'N/A',
+                zone: row['Zone'] || 'N/A',
+                scheduleStartDate: parseDateSafe(row['Schedule start date']),
+                wayleaveNumber: row['Wayleave number'] || '',
+                accountNumber: row['Account number'] || '',
+                referenceNumber: row['Reference Number'] || `REF-${Date.now()}-${index}`,
+                requireUSP: requireUSP,
+                sentToUSPDate: parseExcelDate(row['Sent to USP Date']),
+                createdAt: new Date().toISOString()
+              };
+            });
+          
+          onUpload(mappedData);
+          setIsProcessing(false);
+        }, 800);
       }
     };
     reader.readAsBinaryString(file);
@@ -423,31 +444,40 @@ const ExcelUploader: React.FC<{ onUpload: (data: any[]) => void }> = ({ onUpload
 
   return (
     <div 
-      className={`border-2 border-dashed rounded-xl p-8 text-center transition-all bg-white dark:bg-slate-800 ${
-        isDragging ? 'border-blue-500 bg-blue-50 dark:bg-slate-700' : 'border-slate-300 dark:border-slate-600 hover:border-blue-400 hover:bg-slate-50 dark:hover:bg-slate-700'
+      className={`border-2 border-dashed rounded-xl p-8 text-center transition-all bg-white dark:bg-slate-800 group ${
+        isDragging ? 'border-blue-500 bg-blue-50 dark:bg-slate-700 scale-[1.02]' : 'border-slate-300 dark:border-slate-600 hover:border-blue-400 hover:bg-slate-50 dark:hover:bg-slate-700'
       }`}
       onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
       onDragLeave={() => setIsDragging(false)}
       onDrop={handleDrop}
     >
-      <div className="w-12 h-12 bg-blue-50 dark:bg-slate-700 text-blue-500 dark:text-blue-400 rounded-full flex items-center justify-center mx-auto mb-4 border border-slate-200 dark:border-slate-600">
-        <Icons.Excel className="w-6 h-6" />
-      </div>
-      <h3 className="font-semibold text-slate-800 dark:text-white mb-1">Upload Excel File</h3>
-      <p className="text-slate-500 dark:text-slate-400 text-sm mb-4">Drag & drop or click to select</p>
-      <input 
-        type="file" 
-        accept=".xlsx, .xls" 
-        className="hidden" 
-        id="file-upload"
-        onChange={handleChange}
-      />
-      <label 
-        htmlFor="file-upload" 
-        className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-sm font-medium text-slate-700 dark:text-white hover:bg-slate-50 dark:hover:bg-slate-600 shadow-sm transition-all"
-      >
-        <Icons.Upload className="w-4 h-4" /> Select File
-      </label>
+      {isProcessing ? (
+        <div className="py-4 flex flex-col items-center">
+          <Icons.Spinner className="w-10 h-10 text-blue-500 animate-spin mb-3" />
+          <p className="text-slate-600 dark:text-slate-300 font-medium animate-pulse">Processing Excel file...</p>
+        </div>
+      ) : (
+        <>
+          <div className="w-12 h-12 bg-blue-50 dark:bg-slate-700 text-blue-500 dark:text-blue-400 rounded-full flex items-center justify-center mx-auto mb-4 border border-slate-200 dark:border-slate-600 group-hover:scale-110 transition-transform">
+            <Icons.Excel className="w-6 h-6" />
+          </div>
+          <h3 className="font-semibold text-slate-800 dark:text-white mb-1">Upload Excel File</h3>
+          <p className="text-slate-500 dark:text-slate-400 text-sm mb-4">Drag & drop or click to select</p>
+          <input 
+            type="file" 
+            accept=".xlsx, .xls" 
+            className="hidden" 
+            id="file-upload"
+            onChange={handleChange}
+          />
+          <label 
+            htmlFor="file-upload" 
+            className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-sm font-medium text-slate-700 dark:text-white hover:bg-slate-50 dark:hover:bg-slate-600 shadow-sm transition-all hover:shadow-md active:scale-95"
+          >
+            <Icons.Upload className="w-4 h-4" /> Select File
+          </label>
+        </>
+      )}
     </div>
   );
 };
@@ -458,6 +488,7 @@ const App: React.FC = () => {
   const [auth, setAuth] = useState<AuthState>({ isAuthenticated: false, user: null });
   const [records, setRecords] = useState<RecordItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isAuthChecking, setIsAuthChecking] = useState(true); // New state for initial load
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<SortConfig>({ key: 'createdAt', direction: 'desc' });
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -466,7 +497,7 @@ const App: React.FC = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [filterMode, setFilterMode] = useState<'all' | 'delayed'>('all');
   
-  // Theme State - Default to light now
+  // Theme State
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('theme') as 'light' | 'dark' || 'light';
@@ -474,7 +505,6 @@ const App: React.FC = () => {
     return 'light';
   });
 
-  // Edit State
   const [editingRecord, setEditingRecord] = useState<RecordItem | null>(null);
 
   // Apply Theme
@@ -505,6 +535,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const initAuth = async () => {
+       setIsAuthChecking(true);
        const { data } = await supabase.auth.getUser();
        if (data.user) {
          setAuth({
@@ -515,16 +546,14 @@ const App: React.FC = () => {
              role: 'admin'
            }
          });
-         refreshRecords();
-       } else {
-         setIsLoading(false);
-       }
+         await refreshRecords();
+       } 
+       setIsAuthChecking(false);
     };
     initAuth();
   }, []);
 
   const checkAgingRecords = (data: RecordItem[]) => {
-    // Check if Schedule Start Date is more than 7 days ago
     const sevenDaysAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
     const oldPending = data.filter(r => 
       (r.status.toLowerCase() !== 'completed' && r.status.toLowerCase() !== 'archived') && 
@@ -575,7 +604,6 @@ const App: React.FC = () => {
     setIsLoading(true);
     let successCount = 0;
     
-    // In a real scenario, use bulk insert
     await Promise.all(newRecords.map(async (rec) => {
       const res = await addRecord(rec);
       if (res) successCount++;
@@ -668,6 +696,11 @@ const App: React.FC = () => {
     return Object.entries(counts).map(([name, value]) => ({ name, value }));
   }, [records]);
 
+  // Initial Auth Loading Screen
+  if (isAuthChecking) {
+    return <LoadingScreen />;
+  }
+
   if (!auth.isAuthenticated) {
     return <Login onLogin={handleLogin} />;
   }
@@ -752,10 +785,10 @@ const App: React.FC = () => {
               <Icons.Menu className="w-6 h-6" />
             </button>
             <div>
-              <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
+              <h1 className="text-2xl font-bold text-slate-900 dark:text-white animate-fade-in">
                 {filterMode === 'delayed' ? 'Delayed Jobs' : 'Dashboard Overview'}
               </h1>
-              <p className="text-slate-500 dark:text-slate-400 text-sm">
+              <p className="text-slate-500 dark:text-slate-400 text-sm animate-fade-in-up">
                 {filterMode === 'delayed' ? 'Viewing records scheduled > 7 days ago' : "Welcome back, here's what's happening today."}
               </p>
             </div>
@@ -783,12 +816,12 @@ const App: React.FC = () => {
               <input 
                 type="text" 
                 placeholder="Search label, ref, wayleave..." 
-                className="pl-10 pr-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 outline-none w-full md:w-64"
+                className="pl-10 pr-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 outline-none w-full md:w-64 transition-all"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
             </div>
-            <button className="p-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 relative">
+            <button className="p-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 relative hover:scale-105 transition-transform">
               <Icons.Bell className="w-5 h-5" />
               {notifications.length > 0 && (
                 <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
@@ -805,7 +838,7 @@ const App: React.FC = () => {
             { label: 'Completed', value: records.filter(r => r.status.toLowerCase() === 'completed').length, icon: Icons.Check, color: 'emerald' },
             { label: 'Require USP', value: records.filter(r => r.requireUSP).length, icon: Icons.Alert, color: 'purple' },
           ].map((stat, idx) => (
-            <div key={idx} className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm hover:border-blue-400 dark:hover:border-slate-600 transition-all">
+            <div key={idx} className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm hover:border-blue-400 dark:hover:border-slate-600 transition-all hover:shadow-lg hover:-translate-y-1">
               <div className="flex justify-between items-start">
                 <div>
                   <p className="text-slate-500 dark:text-slate-400 text-sm font-medium">{stat.label}</p>
@@ -824,7 +857,7 @@ const App: React.FC = () => {
           <div className="mb-8 animate-fade-in-down">
             <div className="flex justify-between items-center mb-4">
               <h3 className="font-bold text-lg text-slate-800 dark:text-white">Import Records</h3>
-              <button onClick={() => setShowUpload(false)} className="text-slate-400 hover:text-slate-900 dark:hover:text-white">
+              <button onClick={() => setShowUpload(false)} className="text-slate-400 hover:text-slate-900 dark:hover:text-white transition-transform hover:rotate-90">
                 <Icons.Close className="w-5 h-5" />
               </button>
             </div>
@@ -836,14 +869,14 @@ const App: React.FC = () => {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           
           {/* List Section */}
-          <div className="lg:col-span-2 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col overflow-hidden h-[600px]">
+          <div className="lg:col-span-2 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col overflow-hidden h-[600px] animate-fade-in-up">
             <div className="p-6 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center bg-white dark:bg-slate-800 sticky top-0 z-10">
               <h2 className="font-bold text-slate-900 dark:text-white">
                 {filterMode === 'delayed' ? 'Delayed Jobs' : 'Record List'}
               </h2>
               <div className="flex gap-2">
                  <select 
-                    className="text-sm border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-700 dark:text-white rounded-lg px-3 py-1 outline-none"
+                    className="text-sm border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-700 dark:text-white rounded-lg px-3 py-1 outline-none focus:ring-2 focus:ring-blue-500/30"
                     onChange={(e) => setSort({ key: e.target.value as keyof RecordItem, direction: 'desc' })}
                  >
                    <option value="createdAt">Created</option>
@@ -855,8 +888,9 @@ const App: React.FC = () => {
             </div>
             <div className="overflow-x-auto overflow-y-auto flex-1">
               {isLoading ? (
-                <div className="h-full flex items-center justify-center text-slate-400 gap-2">
-                  <Icons.Spinner className="animate-spin w-5 h-5" /> Loading records...
+                <div className="h-full flex flex-col items-center justify-center text-slate-400 gap-4">
+                  <Icons.Spinner className="animate-spin w-8 h-8 text-blue-500" /> 
+                  <span className="animate-pulse">Loading records...</span>
                 </div>
               ) : (
                 <table className="w-full text-left border-collapse">
@@ -890,7 +924,7 @@ const App: React.FC = () => {
                         <td className="px-6 py-4">
                            {record.requireUSP ? (
                              <div className="flex flex-col gap-1">
-                               <span className="text-xs font-semibold bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300 px-2 py-0.5 rounded w-fit">
+                               <span className="text-xs font-semibold bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300 px-2 py-0.5 rounded w-fit animate-pulse-slow">
                                  Required
                                </span>
                                {record.sentToUSPDate ? (
@@ -941,7 +975,7 @@ const App: React.FC = () => {
 
           {/* Analytics Section */}
           <div className="space-y-6">
-            <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm h-80 flex flex-col">
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm h-80 flex flex-col animate-fade-in-up" style={{animationDelay: '0.1s'}}>
               <h3 className="font-bold text-slate-900 dark:text-white mb-6">Status Distribution</h3>
               <div className="w-full h-64">
                  <ResponsiveContainer width="100%" height="100%">
@@ -970,7 +1004,7 @@ const App: React.FC = () => {
             </div>
 
             {/* Zone Chart */}
-            <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm h-80 flex flex-col">
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm h-80 flex flex-col animate-fade-in-up" style={{animationDelay: '0.2s'}}>
               <h3 className="font-bold text-slate-900 dark:text-white mb-2">Zone Activity</h3>
                <div className="w-full h-64">
                  <ResponsiveContainer width="100%" height="100%">
@@ -1004,8 +1038,8 @@ const App: React.FC = () => {
                </div>
             </div>
 
-            <div className="bg-gradient-to-br from-indigo-600 to-purple-800 p-6 rounded-2xl text-white shadow-lg relative overflow-hidden group cursor-pointer border border-transparent dark:border-purple-700" onClick={() => setShowAI(true)}>
-              <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-2xl -mr-16 -mt-16 transition-all group-hover:bg-white/20"></div>
+            <div className="bg-gradient-to-br from-indigo-600 to-purple-800 p-6 rounded-2xl text-white shadow-lg relative overflow-hidden group cursor-pointer border border-transparent dark:border-purple-700 animate-fade-in-up" style={{animationDelay: '0.3s'}} onClick={() => setShowAI(true)}>
+              <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-2xl -mr-16 -mt-16 transition-all group-hover:bg-white/20 group-hover:scale-110"></div>
               <Icons.AI className="w-8 h-8 mb-4 text-purple-200" />
               <h3 className="text-lg font-bold mb-1">AI Assistant</h3>
               <p className="text-purple-100 text-sm mb-4 opacity-90">Analyze scheduling, bottlenecks, and zone performance with Gemini.</p>
@@ -1039,12 +1073,20 @@ const App: React.FC = () => {
       <style>{`
         @keyframes fadeInDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes fadeInUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
         @keyframes slideInRight { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
         @keyframes scaleIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+        @keyframes bounceSubtle { 0%, 100% { transform: translateY(-3px); } 50% { transform: translateY(3px); } }
+        @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
+        
         .animate-fade-in-down { animation: fadeInDown 0.3s ease-out forwards; }
         .animate-fade-in-up { animation: fadeInUp 0.5s ease-out forwards; }
+        .animate-fade-in { animation: fadeIn 0.4s ease-out forwards; }
         .animate-slide-in-right { animation: slideInRight 0.3s ease-out forwards; }
         .animate-scale-in { animation: scaleIn 0.2s ease-out forwards; }
+        .animate-bounce-subtle { animation: bounceSubtle 2s infinite ease-in-out; }
+        .animate-shake { animation: shake 0.4s ease-in-out; }
+        .animate-pulse-slow { animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
       `}</style>
     </div>
   );

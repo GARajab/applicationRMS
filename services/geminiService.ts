@@ -1,7 +1,15 @@
 import { GoogleGenAI } from "@google/genai";
 import { RecordItem } from "../types";
 
-const apiKey = process.env.API_KEY || ''; 
+// Safe access to process.env to prevent "process is not defined" crashes in browser
+const getEnvVar = (key: string) => {
+  if (typeof process !== 'undefined' && process.env) {
+    return process.env[key];
+  }
+  return '';
+};
+
+const apiKey = getEnvVar('API_KEY') || ''; 
 const ai = new GoogleGenAI({ apiKey });
 
 export const generateDataInsights = async (records: RecordItem[], query?: string): Promise<string> => {
