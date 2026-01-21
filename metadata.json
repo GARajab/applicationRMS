@@ -1,0 +1,5 @@
+{
+  "name": "Nexus Record Manager",
+  "description": "A comprehensive record management system with Excel integration, simulated database, authentication, automated notifications for aging records, and Gemini-powered AI insights.",
+  "requestFramePermissions": []
+}
