@@ -1,23 +1,27 @@
 import { GoogleGenAI } from "@google/genai";
 import { RecordItem } from "../types";
 
-// Safe access to process.env to prevent "process is not defined" crashes in browser
-const getEnvVar = (key: string) => {
-  if (typeof process !== 'undefined' && process.env) {
-    return process.env[key];
+// Ensure TypeScript recognizes process.env if @types/node is missing
+declare var process: {
+  env: {
+    [key: string]: string | undefined;
   }
-  return '';
 };
 
-const apiKey = getEnvVar('API_KEY') || ''; 
-const ai = new GoogleGenAI({ apiKey });
-
 export const generateDataInsights = async (records: RecordItem[], query?: string): Promise<string> => {
+  // Access the key directly as per requirements. 
+  // Vite's `define` will replace `process.env.API_KEY` with the actual string literal during build.
+  const apiKey = process.env.API_KEY;
+
   if (!apiKey) {
-    return "API Key is missing. Please configure the environment variable.";
+    console.warn("API Key is missing. AI insights will not work.");
+    return "API Key is missing. Please configure the environment variable API_KEY in your deployment settings.";
   }
 
   try {
+    // Initialize the client lazily to avoid top-level crashes
+    const ai = new GoogleGenAI({ apiKey });
+    
     const contextData = JSON.stringify(records.slice(0, 50));
     
     const prompt = query 
