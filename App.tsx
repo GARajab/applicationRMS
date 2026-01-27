@@ -405,15 +405,20 @@ const ExcelUploader: React.FC<{ onUpload: (data: any[]) => void }> = ({ onUpload
               const requireUSPRaw = String(row['Require USP'] || row['require_usp'] || '').toLowerCase();
               const requireUSP = requireUSPRaw === 'yes' || requireUSPRaw === 'true';
 
+              // Sanitize inputs
+              const wayleave = String(row['Wayleave number'] || '').trim();
+              const account = String(row['Account number'] || '').trim();
+              const ref = String(row['Reference Number'] || '').trim();
+
               return {
                 label: row['Label'] || row['Title'] || `Imported ${index + 1}`,
                 status: row['Status'] || 'Pending',
                 block: row['Block'] || 'N/A',
                 zone: row['Zone'] || 'N/A',
                 scheduleStartDate: parseDateSafe(row['Schedule start date']),
-                wayleaveNumber: row['Wayleave number'] || '',
-                accountNumber: row['Account number'] || '',
-                referenceNumber: row['Reference Number'] || `REF-${Date.now()}-${index}`,
+                wayleaveNumber: wayleave,
+                accountNumber: account,
+                referenceNumber: ref || `REF-${Date.now()}-${index}`,
                 requireUSP: requireUSP,
                 sentToUSPDate: parseExcelDate(row['Sent to USP Date']),
                 createdAt: new Date().toISOString()
@@ -602,9 +607,40 @@ const App: React.FC = () => {
 
   const handleExcelUpload = async (newRecords: RecordItem[]) => {
     setIsLoading(true);
+    
+    // Fetch fresh records to ensure accurate duplicate checking
+    const currentRecords = await getRecords();
+    
+    const uniqueRecords: RecordItem[] = [];
+    let duplicatesCount = 0;
+
+    for (const newRecord of newRecords) {
+      // Logic for detecting existing records:
+      // 1. Matches an existing Reference Number
+      // 2. Matches an existing Wayleave Number (if provided and not empty)
+      const isDuplicate = currentRecords.some(existing => {
+        const isRefMatch = existing.referenceNumber && 
+                           newRecord.referenceNumber && 
+                           existing.referenceNumber === newRecord.referenceNumber;
+        
+        const isWayleaveMatch = existing.wayleaveNumber && 
+                               newRecord.wayleaveNumber && 
+                               newRecord.wayleaveNumber !== '' && 
+                               existing.wayleaveNumber === newRecord.wayleaveNumber;
+        
+        return isRefMatch || isWayleaveMatch;
+      });
+
+      if (isDuplicate) {
+        duplicatesCount++;
+      } else {
+        uniqueRecords.push(newRecord);
+      }
+    }
+
     let successCount = 0;
     
-    await Promise.all(newRecords.map(async (rec) => {
+    await Promise.all(uniqueRecords.map(async (rec) => {
       const res = await addRecord(rec);
       if (res) successCount++;
     }));
@@ -612,10 +648,22 @@ const App: React.FC = () => {
     await refreshRecords();
     setShowUpload(false);
     
-    addNotification({
-      type: NotificationType.SUCCESS,
-      message: `Successfully imported ${successCount} records.`,
-    });
+    if (successCount === 0 && duplicatesCount === 0) {
+      addNotification({
+        type: NotificationType.INFO,
+        message: `No records processed.`,
+      });
+    } else {
+      let message = '';
+      if (successCount > 0) message += `Imported ${successCount} new records. `;
+      if (duplicatesCount > 0) message += `Skipped ${duplicatesCount} duplicates.`;
+      
+      addNotification({
+        type: successCount > 0 ? NotificationType.SUCCESS : NotificationType.INFO,
+        message: message.trim(),
+      });
+    }
+    setIsLoading(false);
   };
 
   const handleUpdateRecord = async (id: string, updates: Partial<RecordItem>) => {
