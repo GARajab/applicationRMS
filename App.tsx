@@ -399,7 +399,14 @@ const ExcelUploader: React.FC<{ onUpload: (data: any[]) => void }> = ({ onUpload
           const mappedData = jsonData
             .filter((row: any) => {
               const status = String(row['Status'] || '').trim().toLowerCase();
-              return status !== 'pending payment' && status !== 'canceled';
+              const excluded = [
+                'pending payment',
+                'cancelled',
+                'canceled', 
+                'chief approval',
+                'head engineer approval'
+              ];
+              return !excluded.includes(status);
             })
             .map((row: any, index) => {
               const requireUSPRaw = String(row['Require USP'] || row['require_usp'] || '').toLowerCase();
@@ -944,6 +951,7 @@ const App: React.FC = () => {
                 <table className="w-full text-left border-collapse">
                   <thead className="bg-slate-50 dark:bg-slate-900/50 text-slate-500 dark:text-slate-400 text-xs uppercase font-medium sticky top-0">
                     <tr>
+                      <th className="px-6 py-4 w-16">#</th>
                       <th className="px-6 py-4">Reference</th>
                       <th className="px-6 py-4">Label</th>
                       <th className="px-6 py-4">Status</th>
@@ -953,8 +961,11 @@ const App: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-                    {filteredRecords.map((record) => (
+                    {filteredRecords.map((record, index) => (
                       <tr key={record.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors group">
+                        <td className="px-6 py-4 text-sm text-slate-500 dark:text-slate-500">
+                          {index + 1}
+                        </td>
                         <td className="px-6 py-4 text-sm font-mono text-slate-600 dark:text-slate-400">
                           {record.referenceNumber}
                         </td>
@@ -1010,7 +1021,7 @@ const App: React.FC = () => {
                     ))}
                     {filteredRecords.length === 0 && (
                       <tr>
-                        <td colSpan={6} className="px-6 py-12 text-center text-slate-500 dark:text-slate-400">
+                        <td colSpan={7} className="px-6 py-12 text-center text-slate-500 dark:text-slate-400">
                           No records found matching your criteria.
                         </td>
                       </tr>
