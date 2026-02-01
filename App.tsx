@@ -507,6 +507,13 @@ const App: React.FC = () => {
 
   const [editingRecord, setEditingRecord] = useState<RecordItem | null>(null);
 
+  // Initialize Browser Notifications on mount
+  useEffect(() => {
+    if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission();
+    }
+  }, []);
+
   // Apply Theme
   useEffect(() => {
     const root = window.document.documentElement;
@@ -577,6 +584,20 @@ const App: React.FC = () => {
       read: false
     };
     setNotifications(prev => [newNotif, ...prev]);
+
+    // Browser Notification Logic
+    if ("Notification" in window && Notification.permission === "granted") {
+      try {
+        new window.Notification("Nexus Record Manager", {
+          body: notif.message,
+          // Optional: Add an icon if available in your public folder
+          // icon: '/vite.svg', 
+          silent: false,
+        });
+      } catch (e) {
+        console.error("Browser notification failed:", e);
+      }
+    }
   };
 
   const handleNotificationClick = (notification: Notification) => {
