@@ -68,13 +68,30 @@ export const seedInitialData = async (): Promise<RecordItem[]> => {
   const current = await getRecords();
   if (current.length > 0) return current;
 
+  // New Sequence statuses for seed data
+  const statuses = [
+    "Assign planning",
+    "Site Visit",
+    "Design",
+    "Design Approval",
+    "GIS digitalization",
+    "Wayleave",
+    "Cost estimation",
+    "Attach Utilities Drawing",
+    "Engineer approval"
+  ];
+
   // Generate mock data matching the new specific schema
   const mockData: RecordItem[] = Array.from({ length: 15 }).map((_, i) => {
     const requireUSP = i % 3 === 0; // Every 3rd record requires USP
+    
+    // Distribute statuses across the lifecycle
+    const status = statuses[i % statuses.length];
+
     return {
       id: crypto.randomUUID(),
-      label: `Installation - ${['Fiber', 'Copper', 'Maintenance', 'Upgrade'][i % 4]}`,
-      status: i % 5 === 0 ? 'Completed' : i % 3 === 0 ? 'In Progress' : 'Pending',
+      label: `Project - ${['Alpha', 'Beta', 'Gamma', 'Delta'][i % 4]} - ${i + 1}`,
+      status: status,
       block: `B-${10 + (i % 5)}`,
       zone: `Z-${['North', 'South', 'East', 'West'][i % 4]}`,
       scheduleStartDate: new Date(Date.now() - (i * 24 * 60 * 60 * 1000)).toISOString(),

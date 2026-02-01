@@ -4,8 +4,20 @@ import * as XLSX from 'xlsx';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend } from 'recharts';
 import { RecordItem, User, AuthState, Notification, NotificationType, SortConfig } from './types';
 import { getRecords, addRecord, deleteRecord, updateRecord, seedInitialData } from './services/storageService';
-import { generateDataInsights } from './services/geminiService';
 import { supabase } from './services/supabaseClient';
+
+// --- Constants ---
+const STATUS_SEQUENCE = [
+  "Assign planning",
+  "Site Visit",
+  "Design",
+  "Design Approval",
+  "GIS digitalization",
+  "Wayleave",
+  "Cost estimation",
+  "Attach Utilities Drawing",
+  "Engineer approval"
+];
 
 // --- Helper Functions ---
 const parseDateSafe = (value: any): string => {
@@ -22,6 +34,37 @@ const parseExcelDate = (value: any): string | undefined => {
   // Handle Excel serial dates if passed as numbers, or strings
   const d = new Date(value);
   return !isNaN(d.getTime()) ? d.toISOString() : undefined;
+};
+
+const getStatusColor = (status: string) => {
+  const s = status?.trim();
+  
+  // Specific mappings requested previously + Logic for new sequence
+  switch (s) {
+    case "Assign planning":
+      return 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300';
+    case "Site Visit":
+      return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300';
+    case "Design":
+      return 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300';
+    case "Design Approval":
+      return 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-300';
+    case "GIS digitalization": // GIS Yellow
+      return 'bg-yellow-400 text-slate-900 border border-yellow-500';
+    case "Wayleave": // Wayleave Red
+      return 'bg-red-600 text-white dark:bg-red-500';
+    case "Cost estimation":
+      return 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300';
+    case "Attach Utilities Drawing":
+      return 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300';
+    case "Engineer approval": // Final step - Green
+      return 'bg-emerald-600 text-white dark:bg-emerald-500';
+    case "Passed": // Legacy/Archived
+      return 'bg-emerald-800 text-white';
+    default:
+      // Else is black and white font
+      return 'bg-slate-900 text-white dark:bg-white dark:text-slate-900';
+  }
 };
 
 // --- Components ---
@@ -124,11 +167,13 @@ const EditRecordModal: React.FC<{
               onChange={(e) => setFormData({...formData, status: e.target.value})}
               className="w-full px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white focus:border-blue-500 outline-none transition-all focus:ring-2 focus:ring-blue-500/20"
             >
-              <option value="Pending">Pending</option>
-              <option value="In Progress">In Progress</option>
-              <option value="Completed">Completed</option>
-              <option value="On Hold">On Hold</option>
-              <option value="Cancelled">Cancelled</option>
+              {STATUS_SEQUENCE.map(status => (
+                <option key={status} value={status}>{status}</option>
+              ))}
+              {/* Keep fallback for any legacy statuses */}
+              {!STATUS_SEQUENCE.includes(formData.status) && formData.status && (
+                <option value={formData.status}>{formData.status}</option>
+              )}
             </select>
           </div>
 
@@ -306,79 +351,6 @@ const NotificationToast: React.FC<NotificationProps> = ({ notification, onClose,
   );
 };
 
-// 4. AI Modal
-const AIInsightModal: React.FC<{ isOpen: boolean; onClose: () => void; records: RecordItem[] }> = ({ isOpen, onClose, records }) => {
-  const [query, setQuery] = useState('');
-  const [response, setResponse] = useState('');
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-
-  useEffect(() => {
-    if (isOpen && !response) {
-      handleAnalyze();
-    }
-  }, [isOpen]);
-
-  const handleAnalyze = async (customQuery?: string) => {
-    setIsAnalyzing(true);
-    const result = await generateDataInsights(records, customQuery);
-    setResponse(result);
-    setIsAnalyzing(false);
-  };
-
-  if (!isOpen) return null;
-
-  return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
-      <div className="bg-white dark:bg-slate-800 w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col max-h-[80vh] animate-scale-in border border-slate-200 dark:border-slate-700">
-        <div className="p-6 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center">
-          <div className="flex items-center gap-3">
-            <div className="bg-purple-100 dark:bg-purple-900/50 p-2 rounded-lg">
-              <Icons.AI className="w-6 h-6 text-purple-600 dark:text-purple-400 animate-pulse" />
-            </div>
-            <h2 className="text-xl font-bold text-slate-800 dark:text-white">Gemini Insights</h2>
-          </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors">
-            <Icons.Close className="w-6 h-6" />
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-6 space-y-4">
-          {isAnalyzing ? (
-             <div className="flex flex-col items-center justify-center py-12 text-slate-500 dark:text-slate-400">
-                <Icons.Spinner className="w-10 h-10 animate-spin text-purple-500 mb-4" />
-                <p className="animate-pulse">Analyzing {records.length} records...</p>
-             </div>
-          ) : (
-            <div className="prose dark:prose-invert max-w-none animate-fade-in-up">
-              <p className="whitespace-pre-wrap text-slate-700 dark:text-slate-300 leading-relaxed">{response}</p>
-            </div>
-          )}
-        </div>
-
-        <div className="p-4 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 rounded-b-2xl">
-          <div className="flex gap-2">
-            <input 
-              type="text" 
-              placeholder="Ask about zones, blocks, delays..." 
-              className="flex-1 px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:border-purple-500 focus:outline-none transition-all"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleAnalyze(query)}
-            />
-            <button 
-              onClick={() => handleAnalyze(query)}
-              disabled={!query.trim() || isAnalyzing}
-              className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors flex items-center justify-center"
-            >
-              {isAnalyzing ? <Icons.Spinner className="w-5 h-5 animate-spin" /> : <Icons.AI className="w-5 h-5" />}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
 // 5. File Upload (Updated for specific columns)
 const ExcelUploader: React.FC<{ onUpload: (data: any[]) => void }> = ({ onUpload }) => {
   const [isDragging, setIsDragging] = useState(false);
@@ -398,15 +370,16 @@ const ExcelUploader: React.FC<{ onUpload: (data: any[]) => void }> = ({ onUpload
           
           const mappedData = jsonData
             .filter((row: any) => {
-              const status = String(row['Status'] || '').trim().toLowerCase();
+              const status = String(row['Status'] || '').trim();
               const excluded = [
-                'pending payment',
-                'cancelled',
-                'canceled', 
-                'chief approval',
-                'head engineer approval'
+                'Pending payment',
+                'Cancelled',
+                'Canceled', 
+                'Chief approval',
+                'Head engineer approval'
               ];
-              return !excluded.includes(status);
+              // Case insensitive check for exclusion
+              return !excluded.some(ex => ex.toLowerCase() === status.toLowerCase());
             })
             .map((row: any, index) => {
               const requireUSPRaw = String(row['Require USP'] || row['require_usp'] || '').toLowerCase();
@@ -416,10 +389,11 @@ const ExcelUploader: React.FC<{ onUpload: (data: any[]) => void }> = ({ onUpload
               const wayleave = String(row['Wayleave number'] || '').trim();
               const account = String(row['Account number'] || '').trim();
               const ref = String(row['Reference Number'] || '').trim();
+              const status = String(row['Status'] || 'Assign planning').trim();
 
               return {
                 label: row['Label'] || row['Title'] || `Imported ${index + 1}`,
-                status: row['Status'] || 'Pending',
+                status: status,
                 block: row['Block'] || 'N/A',
                 zone: row['Zone'] || 'N/A',
                 scheduleStartDate: parseDateSafe(row['Schedule start date']),
@@ -504,7 +478,6 @@ const App: React.FC = () => {
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<SortConfig>({ key: 'createdAt', direction: 'desc' });
   const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [showAI, setShowAI] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [filterMode, setFilterMode] = useState<'all' | 'delayed'>('all');
@@ -568,7 +541,7 @@ const App: React.FC = () => {
   const checkAgingRecords = (data: RecordItem[]) => {
     const sevenDaysAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
     const oldPending = data.filter(r => 
-      (r.status.toLowerCase() !== 'completed' && r.status.toLowerCase() !== 'archived') && 
+      (r.status.toLowerCase() !== 'completed' && r.status !== 'Passed' && r.status !== 'Engineer approval' && r.status.toLowerCase() !== 'archived') && 
       new Date(r.scheduleStartDate).getTime() < sevenDaysAgo
     );
 
@@ -615,17 +588,18 @@ const App: React.FC = () => {
   const handleExcelUpload = async (newRecords: RecordItem[]) => {
     setIsLoading(true);
     
-    // Fetch fresh records to ensure accurate duplicate checking
+    // Fetch fresh records to ensure accurate duplicate and update checking
     const currentRecords = await getRecords();
     
-    const uniqueRecords: RecordItem[] = [];
-    let duplicatesCount = 0;
+    let addedCount = 0;
+    let updatedCount = 0;
+    let ignoredCount = 0;
 
     for (const newRecord of newRecords) {
       // Logic for detecting existing records:
       // 1. Matches an existing Reference Number
       // 2. Matches an existing Wayleave Number (if provided and not empty)
-      const isDuplicate = currentRecords.some(existing => {
+      const existingRecord = currentRecords.find(existing => {
         const isRefMatch = existing.referenceNumber && 
                            newRecord.referenceNumber && 
                            existing.referenceNumber === newRecord.referenceNumber;
@@ -638,38 +612,39 @@ const App: React.FC = () => {
         return isRefMatch || isWayleaveMatch;
       });
 
-      if (isDuplicate) {
-        duplicatesCount++;
+      if (existingRecord) {
+        // Logic: Only update status if new status is "higher" in sequence than old status
+        const oldStatusIndex = STATUS_SEQUENCE.indexOf(existingRecord.status);
+        const newStatusIndex = STATUS_SEQUENCE.indexOf(newRecord.status);
+
+        if (newStatusIndex > -1 && newStatusIndex > oldStatusIndex) {
+          // Update status
+          await updateRecord(existingRecord.id, { status: newRecord.status });
+          updatedCount++;
+        } else {
+          // Status is older or same, or unknown -> Ignore
+          ignoredCount++;
+        }
       } else {
-        uniqueRecords.push(newRecord);
+        // New Record
+        await addRecord(newRecord);
+        addedCount++;
       }
     }
-
-    let successCount = 0;
-    
-    await Promise.all(uniqueRecords.map(async (rec) => {
-      const res = await addRecord(rec);
-      if (res) successCount++;
-    }));
     
     await refreshRecords();
     setShowUpload(false);
     
-    if (successCount === 0 && duplicatesCount === 0) {
-      addNotification({
-        type: NotificationType.INFO,
-        message: `No records processed.`,
-      });
-    } else {
-      let message = '';
-      if (successCount > 0) message += `Imported ${successCount} new records. `;
-      if (duplicatesCount > 0) message += `Skipped ${duplicatesCount} duplicates.`;
-      
-      addNotification({
-        type: successCount > 0 ? NotificationType.SUCCESS : NotificationType.INFO,
-        message: message.trim(),
-      });
-    }
+    let message = '';
+    if (addedCount > 0) message += `Added ${addedCount} new. `;
+    if (updatedCount > 0) message += `Updated status for ${updatedCount}. `;
+    if (ignoredCount > 0) message += `Ignored ${ignoredCount} (duplicates/older status).`;
+    
+    addNotification({
+      type: (addedCount > 0 || updatedCount > 0) ? NotificationType.SUCCESS : NotificationType.INFO,
+      message: message.trim() || "No changes made.",
+    });
+
     setIsLoading(false);
   };
 
@@ -706,21 +681,28 @@ const App: React.FC = () => {
   const filteredRecords = useMemo(() => {
     let result = records;
 
-    if (filterMode === 'delayed') {
-      const sevenDaysAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
-      result = result.filter(r => 
-        (r.status.toLowerCase() !== 'completed') && 
-        new Date(r.scheduleStartDate).getTime() < sevenDaysAgo
+    // Search always searches the full database (including Passed/Archived)
+    if (search.trim()) {
+       result = result.filter(r => 
+        r.label.toLowerCase().includes(search.toLowerCase()) ||
+        r.referenceNumber.toLowerCase().includes(search.toLowerCase()) ||
+        r.wayleaveNumber.toLowerCase().includes(search.toLowerCase()) ||
+        r.accountNumber.toLowerCase().includes(search.toLowerCase()) ||
+        r.zone.toLowerCase().includes(search.toLowerCase())
       );
+    } else {
+      // If not searching, apply normal filters
+      if (filterMode === 'delayed') {
+        const sevenDaysAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
+        result = result.filter(r => 
+          (r.status !== 'Engineer approval' && r.status !== 'Passed') && 
+          new Date(r.scheduleStartDate).getTime() < sevenDaysAgo
+        );
+      } else {
+        // Default view: Hide 'Passed' (Archived) but show all others
+        result = result.filter(r => r.status !== 'Passed');
+      }
     }
-
-    result = result.filter(r => 
-      r.label.toLowerCase().includes(search.toLowerCase()) ||
-      r.referenceNumber.toLowerCase().includes(search.toLowerCase()) ||
-      r.wayleaveNumber.toLowerCase().includes(search.toLowerCase()) ||
-      r.accountNumber.toLowerCase().includes(search.toLowerCase()) ||
-      r.zone.toLowerCase().includes(search.toLowerCase())
-    );
 
     result.sort((a, b) => {
       const aValue = a[sort.key];
@@ -740,7 +722,12 @@ const App: React.FC = () => {
       acc[r.status] = (acc[r.status] || 0) + 1;
       return acc;
     }, {} as Record<string, number>);
-    return Object.entries(counts).map(([name, value]) => ({ name, value }));
+    
+    // Ensure all steps are represented in the chart even if 0, for clarity
+    return STATUS_SEQUENCE.map(step => ({
+      name: step,
+      value: counts[step] || 0
+    })).filter(item => item.value > 0); // Optional: filter out 0s if chart is too crowded
   }, [records]);
 
   const zoneData = useMemo(() => {
@@ -804,10 +791,6 @@ const App: React.FC = () => {
           >
             <Icons.Excel className="w-5 h-5" />
             <span className="font-medium">Import Data</span>
-          </button>
-          <button onClick={() => setShowAI(true)} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-100 dark:hover:bg-slate-900 rounded-xl transition-colors text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300">
-            <Icons.AI className="w-5 h-5" />
-            <span className="font-medium">AI Insights</span>
           </button>
         </nav>
 
@@ -889,9 +872,9 @@ const App: React.FC = () => {
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6 mb-8">
           {[
             { label: 'Total Records', value: records.length, icon: Icons.Excel, color: 'blue' },
-            { label: 'Pending', value: records.filter(r => r.status.toLowerCase() === 'pending').length, icon: Icons.Clock, color: 'amber' },
-            { label: 'Completed', value: records.filter(r => r.status.toLowerCase() === 'completed').length, icon: Icons.Check, color: 'emerald' },
-            { label: 'Require USP', value: records.filter(r => r.requireUSP).length, icon: Icons.Alert, color: 'purple' },
+            { label: 'Assign planning', value: records.filter(r => r.status === 'Assign planning').length, icon: Icons.Clock, color: 'slate' },
+            { label: 'Completed', value: records.filter(r => r.status === 'Engineer approval').length, icon: Icons.Check, color: 'emerald' },
+            { label: 'In Design', value: records.filter(r => r.status.includes('Design')).length, icon: Icons.Edit, color: 'indigo' },
           ].map((stat, idx) => (
             <div key={idx} className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm hover:border-blue-400 dark:hover:border-slate-600 transition-all hover:shadow-lg hover:-translate-y-1">
               <div className="flex justify-between items-start">
@@ -974,9 +957,7 @@ const App: React.FC = () => {
                           <div className="text-xs text-slate-500 dark:text-slate-500">Zone: {record.zone}</div>
                         </td>
                         <td className="px-6 py-4">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize
-                            ${record.status.toLowerCase() === 'completed' ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-400 border border-transparent dark:border-emerald-900' : 
-                              record.status.toLowerCase() === 'pending' ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-400 border border-transparent dark:border-amber-900' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-400 border border-transparent dark:border-blue-900'}`}>
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold capitalize shadow-sm ${getStatusColor(record.status)}`}>
                             {record.status}
                           </span>
                         </td>
@@ -1040,7 +1021,7 @@ const App: React.FC = () => {
                  <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={statusData}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={theme === 'dark' ? '#334155' : '#e2e8f0'} />
-                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: theme === 'dark' ? '#94a3b8' : '#64748b', fontSize: 12}} dy={10} />
+                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: theme === 'dark' ? '#94a3b8' : '#64748b', fontSize: 10}} dy={10} angle={-15} textAnchor="end" />
                       <YAxis axisLine={false} tickLine={false} tick={{fill: theme === 'dark' ? '#94a3b8' : '#64748b', fontSize: 12}} />
                       <Tooltip 
                         cursor={{fill: theme === 'dark' ? '#1e293b' : '#f1f5f9'}}
@@ -1054,7 +1035,18 @@ const App: React.FC = () => {
                       />
                       <Bar dataKey="value" radius={[4, 4, 0, 0]}>
                         {statusData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={['#3b82f6', '#10b981', '#f59e0b', '#ef4444'][index % 4]} />
+                          // Mapped colors consistent with sequence
+                          <Cell key={`cell-${index}`} fill={[
+                            '#e2e8f0', // Assign Planning (Slate)
+                            '#dbeafe', // Site Visit (Blue)
+                            '#e0e7ff', // Design (Indigo)
+                            '#cffafe', // Design Approval (Cyan)
+                            '#facc15', // GIS (Yellow)
+                            '#dc2626', // Wayleave (Red)
+                            '#ffedd5', // Cost (Orange)
+                            '#f3e8ff', // Utilities (Purple)
+                            '#059669'  // Engineer Approval (Emerald)
+                          ][index % 9]} />
                         ))}
                       </Bar>
                     </BarChart>
@@ -1096,22 +1088,11 @@ const App: React.FC = () => {
                  </ResponsiveContainer>
                </div>
             </div>
-
-            <div className="bg-gradient-to-br from-indigo-600 to-purple-800 p-6 rounded-2xl text-white shadow-lg relative overflow-hidden group cursor-pointer border border-transparent dark:border-purple-700 animate-fade-in-up" style={{animationDelay: '0.3s'}} onClick={() => setShowAI(true)}>
-              <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-2xl -mr-16 -mt-16 transition-all group-hover:bg-white/20 group-hover:scale-110"></div>
-              <Icons.AI className="w-8 h-8 mb-4 text-purple-200" />
-              <h3 className="text-lg font-bold mb-1">AI Assistant</h3>
-              <p className="text-purple-100 text-sm mb-4 opacity-90">Analyze scheduling, bottlenecks, and zone performance with Gemini.</p>
-              <div className="inline-flex items-center text-xs font-semibold bg-white/20 px-3 py-1 rounded-full backdrop-blur-sm hover:bg-white/30 transition-colors">
-                Analyze Now <Icons.Right className="w-3 h-3 ml-1" />
-              </div>
-            </div>
           </div>
         </div>
       </main>
 
       {/* Overlays */}
-      <AIInsightModal isOpen={showAI} onClose={() => setShowAI(false)} records={records} />
       <EditRecordModal 
          isOpen={!!editingRecord} 
          record={editingRecord} 
