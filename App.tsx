@@ -36,35 +36,48 @@ const parseExcelDate = (value: any): string | undefined => {
   return !isNaN(d.getTime()) ? d.toISOString() : undefined;
 };
 
+// Modern Color Mapping
 const getStatusColor = (status: string) => {
-  const s = status?.trim();
+  const s = status?.trim().toLowerCase() || '';
   
-  // Specific mappings requested previously + Logic for new sequence
-  switch (s) {
-    case "Assign planning":
-      return 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300';
-    case "Site Visit":
-      return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300';
-    case "Design":
-      return 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300';
-    case "Design Approval":
-      return 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-300';
-    case "GIS digitalization": // GIS Yellow
-      return 'bg-yellow-400 text-slate-900 border border-yellow-500';
-    case "Wayleave": // Wayleave Red
-      return 'bg-red-600 text-white dark:bg-red-500';
-    case "Cost estimation":
-      return 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300';
-    case "Attach Utilities Drawing":
-      return 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300';
-    case "Engineer approval": // Final step - Green
-      return 'bg-emerald-600 text-white dark:bg-emerald-500';
-    case "Passed": // Legacy/Archived
-      return 'bg-emerald-800 text-white';
-    default:
-      // Else is black and white font
-      return 'bg-slate-900 text-white dark:bg-white dark:text-slate-900';
+  // 1. GREEN: Passed / Engineer Approval
+  // Modern aesthetic: Subtle emerald background, strong text, delicate border
+  if (s === 'passed' || s === 'engineer approval') {
+    return 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20';
   }
+  
+  // 2. YELLOW: GIS
+  // Modern aesthetic: Subtle amber background
+  if (s.includes('gis')) {
+    return 'bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20';
+  }
+  
+  // 3. RED: Wayleave
+  // Modern aesthetic: Subtle rose background
+  if (s.includes('wayleave')) {
+    return 'bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/20';
+  }
+  
+  // 4. ELSE: Black/White (Monochrome)
+  // Modern aesthetic: Clean Slate/Zinc look. High contrast but not harsh.
+  return 'bg-slate-100 text-slate-700 border border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700';
+};
+
+// Chart Color Mapping
+const getChartColor = (status: string, theme: 'light' | 'dark') => {
+  const s = status?.trim().toLowerCase() || '';
+  
+  if (s === 'passed' || s === 'engineer approval') {
+    return '#10b981'; // emerald-500
+  }
+  if (s.includes('gis')) {
+    return '#f59e0b'; // amber-500
+  }
+  if (s.includes('wayleave')) {
+    return '#f43f5e'; // rose-500
+  }
+  // Else: Slate
+  return theme === 'dark' ? '#94a3b8' : '#475569';
 };
 
 // --- Components ---
@@ -73,14 +86,14 @@ const getStatusColor = (status: string) => {
 const LoadingScreen: React.FC = () => (
   <div className="fixed inset-0 bg-slate-50 dark:bg-slate-900 z-[100] flex flex-col items-center justify-center animate-fade-in">
     <div className="relative mb-8">
-      <div className="absolute inset-0 bg-blue-500/20 rounded-full blur-xl animate-pulse"></div>
-      <div className="w-20 h-20 bg-gradient-to-tr from-blue-600 to-indigo-600 rounded-2xl flex items-center justify-center shadow-2xl relative z-10 animate-bounce-subtle">
+      <div className="absolute inset-0 bg-emerald-500/20 rounded-full blur-xl animate-pulse"></div>
+      <div className="w-20 h-20 bg-gradient-to-tr from-emerald-500 to-teal-500 rounded-2xl flex items-center justify-center shadow-2xl relative z-10 animate-bounce-subtle">
         <Icons.Dashboard className="w-10 h-10 text-white animate-pulse" />
       </div>
     </div>
     <h1 className="text-2xl font-bold text-slate-800 dark:text-white mb-2">Planning Dashboard</h1>
     <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400">
-      <Icons.Spinner className="w-5 h-5 animate-spin text-blue-500" />
+      <Icons.Spinner className="w-5 h-5 animate-spin text-emerald-500" />
       <span className="text-sm font-medium">Initializing system...</span>
     </div>
   </div>
@@ -130,23 +143,23 @@ const EditRecordModal: React.FC<{
   if (!isOpen || !record) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
-      <div className="bg-white dark:bg-slate-800 w-full max-w-md rounded-2xl shadow-2xl flex flex-col animate-scale-in border border-slate-200 dark:border-slate-700">
-        <div className="p-6 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center">
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
+      <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl flex flex-col animate-scale-in border border-slate-200 dark:border-slate-800">
+        <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
           <h2 className="text-xl font-bold text-slate-800 dark:text-white">Edit Record</h2>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
             <Icons.Close className="w-6 h-6" />
           </button>
         </div>
         
-        <div className="p-6 space-y-4">
+        <div className="p-6 space-y-5">
           <div>
             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Label / Title</label>
             <input 
               type="text" 
               value={formData.label}
               onChange={(e) => setFormData({...formData, label: e.target.value})}
-              className="w-full px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white focus:border-blue-500 outline-none transition-all focus:ring-2 focus:ring-blue-500/20"
+              className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-slate-900 dark:text-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 outline-none transition-all"
             />
           </div>
 
@@ -156,7 +169,7 @@ const EditRecordModal: React.FC<{
               type="text" 
               value={formData.wayleaveNumber}
               onChange={(e) => setFormData({...formData, wayleaveNumber: e.target.value})}
-              className="w-full px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white focus:border-blue-500 outline-none transition-all focus:ring-2 focus:ring-blue-500/20"
+              className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-slate-900 dark:text-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 outline-none transition-all"
             />
           </div>
 
@@ -165,25 +178,24 @@ const EditRecordModal: React.FC<{
             <select
               value={formData.status}
               onChange={(e) => setFormData({...formData, status: e.target.value})}
-              className="w-full px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white focus:border-blue-500 outline-none transition-all focus:ring-2 focus:ring-blue-500/20"
+              className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-slate-900 dark:text-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 outline-none transition-all appearance-none cursor-pointer"
             >
               {STATUS_SEQUENCE.map(status => (
                 <option key={status} value={status}>{status}</option>
               ))}
-              {/* Keep fallback for any legacy statuses */}
               {!STATUS_SEQUENCE.includes(formData.status) && formData.status && (
                 <option value={formData.status}>{formData.status}</option>
               )}
             </select>
           </div>
 
-          <div className="flex items-center gap-3 py-2 p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
+          <div className="flex items-center gap-3 py-2 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
             <input 
               type="checkbox" 
               id="requireUSP"
               checked={formData.requireUSP}
               onChange={(e) => setFormData({...formData, requireUSP: e.target.checked})}
-              className="w-5 h-5 rounded border-slate-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500 cursor-pointer"
+              className="w-5 h-5 rounded border-slate-300 dark:border-slate-600 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
             />
             <label htmlFor="requireUSP" className="text-sm font-medium text-slate-700 dark:text-slate-300 cursor-pointer">Require USP?</label>
           </div>
@@ -195,23 +207,23 @@ const EditRecordModal: React.FC<{
                 type="date" 
                 value={formData.sentToUSPDate}
                 onChange={(e) => setFormData({...formData, sentToUSPDate: e.target.value})}
-                className="w-full px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white focus:border-blue-500 outline-none transition-all focus:ring-2 focus:ring-blue-500/20"
+                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-slate-900 dark:text-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 outline-none transition-all"
               />
             </div>
           )}
         </div>
 
-        <div className="p-4 border-t border-slate-200 dark:border-slate-700 flex justify-end gap-3">
+        <div className="p-5 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-3 bg-slate-50/50 dark:bg-slate-800/20 rounded-b-2xl">
           <button 
             onClick={onClose}
-            className="px-4 py-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors font-medium"
+            className="px-5 py-2.5 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-xl transition-colors font-medium text-sm"
           >
             Cancel
           </button>
           <button 
             onClick={handleSave}
             disabled={isSaving}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium flex items-center gap-2 shadow-lg shadow-blue-500/30"
+            className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 dark:bg-emerald-600 dark:hover:bg-emerald-500 text-white rounded-xl transition-all font-medium text-sm flex items-center gap-2 shadow-lg shadow-emerald-900/10 dark:shadow-emerald-900/20"
           >
             {isSaving ? <Icons.Spinner className="w-4 h-4 animate-spin" /> : <Icons.Save className="w-4 h-4" />}
             Save Changes
@@ -259,41 +271,41 @@ const Login: React.FC<{ onLogin: (user: User) => void }> = ({ onLogin }) => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-100 dark:bg-slate-900 p-4 transition-colors duration-200">
-      <div className="bg-white dark:bg-slate-800 p-8 rounded-2xl shadow-xl w-full max-w-md border border-slate-200 dark:border-slate-700 animate-fade-in-up">
-        <div className="text-center mb-8">
-          <div className="bg-blue-600 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-500/30 animate-bounce-subtle">
+    <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 p-4 transition-colors duration-300">
+      <div className="bg-white dark:bg-slate-900 p-8 rounded-3xl shadow-2xl shadow-slate-200/50 dark:shadow-black/20 w-full max-w-md border border-slate-100 dark:border-slate-800 animate-fade-in-up">
+        <div className="text-center mb-10">
+          <div className="bg-gradient-to-tr from-emerald-500 to-teal-500 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-xl shadow-emerald-500/20 animate-bounce-subtle">
             <Icons.Dashboard className="text-white w-8 h-8" />
           </div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Planning Dashboard</h1>
-          <p className="text-slate-500 dark:text-slate-400 mt-2">Sign in via Supabase</p>
+          <h1 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">Welcome Back</h1>
+          <p className="text-slate-500 dark:text-slate-400 mt-3 font-medium">Sign in to your planning dashboard</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Email</label>
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider ml-1">Email</label>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-4 py-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 outline-none transition-all"
+              className="w-full px-4 py-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white placeholder-slate-400 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 outline-none transition-all font-medium"
               placeholder="admin@example.com"
             />
           </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Password</label>
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider ml-1">Password</label>
             <input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-4 py-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 outline-none transition-all"
+              className="w-full px-4 py-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white placeholder-slate-400 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 outline-none transition-all font-medium"
               placeholder="••••••••"
             />
           </div>
 
           {error && (
-            <div className="p-3 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-200 text-sm rounded-lg flex items-center gap-2 border border-red-200 dark:border-red-800 animate-shake">
-              <Icons.Alert className="w-4 h-4" />
+            <div className="p-4 bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-300 text-sm rounded-xl flex items-center gap-3 border border-rose-100 dark:border-rose-900 animate-shake">
+              <Icons.Alert className="w-5 h-5 flex-shrink-0" />
               {error}
             </div>
           )}
@@ -301,7 +313,7 @@ const Login: React.FC<{ onLogin: (user: User) => void }> = ({ onLogin }) => {
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl transition-all shadow-lg shadow-blue-600/30 flex items-center justify-center gap-2 active:scale-95"
+            className="w-full bg-slate-900 hover:bg-slate-800 dark:bg-emerald-600 dark:hover:bg-emerald-500 text-white font-bold py-4 rounded-xl transition-all shadow-xl shadow-slate-900/10 dark:shadow-emerald-900/20 flex items-center justify-center gap-2 active:scale-95"
           >
             {isLoading ? <Icons.Spinner className="animate-spin w-5 h-5" /> : 'Sign In'}
           </button>
@@ -320,30 +332,30 @@ interface NotificationProps {
 
 const NotificationToast: React.FC<NotificationProps> = ({ notification, onClose, onClick }) => {
   const style = {
-    [NotificationType.INFO]: 'bg-white dark:bg-slate-800 border-blue-200 dark:border-blue-900 text-blue-800 dark:text-blue-100',
-    [NotificationType.WARNING]: 'bg-white dark:bg-slate-800 border-amber-200 dark:border-amber-900 text-amber-800 dark:text-amber-100',
-    [NotificationType.SUCCESS]: 'bg-white dark:bg-slate-800 border-emerald-200 dark:border-emerald-900 text-emerald-800 dark:text-emerald-100',
-    [NotificationType.ERROR]: 'bg-white dark:bg-slate-800 border-red-200 dark:border-red-900 text-red-800 dark:text-red-100',
+    [NotificationType.INFO]: 'bg-white dark:bg-slate-800 border-slate-100 dark:border-slate-700 text-slate-700 dark:text-slate-200',
+    [NotificationType.WARNING]: 'bg-white dark:bg-slate-800 border-amber-100 dark:border-amber-900/50 text-amber-700 dark:text-amber-200',
+    [NotificationType.SUCCESS]: 'bg-white dark:bg-slate-800 border-emerald-100 dark:border-emerald-900/50 text-emerald-700 dark:text-emerald-200',
+    [NotificationType.ERROR]: 'bg-white dark:bg-slate-800 border-rose-100 dark:border-rose-900/50 text-rose-700 dark:text-rose-200',
   }[notification.type];
 
   return (
     <div 
-      className={`fixed bottom-4 right-4 z-50 p-4 rounded-xl border shadow-lg max-w-sm w-full animate-slide-in-right ${style} flex items-start gap-3 cursor-pointer hover:brightness-95 dark:hover:brightness-110 transition-all`}
+      className={`fixed bottom-6 right-6 z-50 p-4 pr-10 rounded-2xl border shadow-2xl shadow-slate-200/50 dark:shadow-black/50 max-w-sm w-full animate-slide-in-right ${style} flex items-start gap-3 cursor-pointer hover:scale-[1.02] transition-transform duration-200`}
       onClick={() => onClick && onClick(notification)}
     >
-      <div className="mt-0.5">
-        {notification.type === NotificationType.WARNING && <Icons.Alert className="w-5 h-5 text-amber-500" />}
-        {notification.type === NotificationType.SUCCESS && <Icons.Check className="w-5 h-5 text-emerald-500" />}
-        {notification.type === NotificationType.INFO && <Icons.Bell className="w-5 h-5 text-blue-500" />}
-        {notification.type === NotificationType.ERROR && <Icons.Alert className="w-5 h-5 text-red-500" />}
+      <div className="mt-0.5 p-1.5 rounded-full bg-current/10 shrink-0">
+        {notification.type === NotificationType.WARNING && <Icons.Alert className="w-4 h-4" />}
+        {notification.type === NotificationType.SUCCESS && <Icons.Check className="w-4 h-4" />}
+        {notification.type === NotificationType.INFO && <Icons.Bell className="w-4 h-4" />}
+        {notification.type === NotificationType.ERROR && <Icons.Alert className="w-4 h-4" />}
       </div>
       <div className="flex-1">
-        <p className="font-medium text-sm">{notification.message}</p>
-        <p className="text-xs opacity-60 mt-1">{new Date(notification.timestamp).toLocaleTimeString()}</p>
+        <p className="font-semibold text-sm leading-tight">{notification.message}</p>
+        <p className="text-[10px] opacity-60 mt-1.5 font-medium uppercase tracking-wide">{new Date(notification.timestamp).toLocaleTimeString()}</p>
       </div>
       <button 
         onClick={(e) => { e.stopPropagation(); onClose(notification.id); }} 
-        className="opacity-50 hover:opacity-100 p-1"
+        className="absolute top-4 right-4 opacity-40 hover:opacity-100 transition-opacity p-1"
       >
         <Icons.Close className="w-4 h-4" />
       </button>
@@ -430,25 +442,28 @@ const ExcelUploader: React.FC<{ onUpload: (data: any[]) => void }> = ({ onUpload
 
   return (
     <div 
-      className={`border-2 border-dashed rounded-xl p-8 text-center transition-all bg-white dark:bg-slate-800 group ${
-        isDragging ? 'border-blue-500 bg-blue-50 dark:bg-slate-700 scale-[1.02]' : 'border-slate-300 dark:border-slate-600 hover:border-blue-400 hover:bg-slate-50 dark:hover:bg-slate-700'
+      className={`relative border-2 border-dashed rounded-2xl p-10 text-center transition-all duration-300 ${
+        isDragging 
+          ? 'border-emerald-500 bg-emerald-50/50 dark:bg-emerald-900/10 scale-[1.02]' 
+          : 'border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 hover:border-emerald-400 dark:hover:border-emerald-600'
       }`}
       onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
       onDragLeave={() => setIsDragging(false)}
       onDrop={handleDrop}
     >
       {isProcessing ? (
-        <div className="py-4 flex flex-col items-center">
-          <Icons.Spinner className="w-10 h-10 text-blue-500 animate-spin mb-3" />
-          <p className="text-slate-600 dark:text-slate-300 font-medium animate-pulse">Processing Excel file...</p>
+        <div className="py-8 flex flex-col items-center">
+          <Icons.Spinner className="w-10 h-10 text-emerald-500 animate-spin mb-4" />
+          <p className="text-slate-900 dark:text-white font-semibold text-lg animate-pulse">Processing data...</p>
+          <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">Parsing spreadsheet rows</p>
         </div>
       ) : (
         <>
-          <div className="w-12 h-12 bg-blue-50 dark:bg-slate-700 text-blue-500 dark:text-blue-400 rounded-full flex items-center justify-center mx-auto mb-4 border border-slate-200 dark:border-slate-600 group-hover:scale-110 transition-transform">
-            <Icons.Excel className="w-6 h-6" />
+          <div className="w-14 h-14 bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 rounded-2xl flex items-center justify-center mx-auto mb-5 shadow-lg shadow-slate-200/50 dark:shadow-none border border-slate-100 dark:border-slate-700 group-hover:scale-110 transition-transform duration-300">
+            <Icons.Excel className="w-7 h-7" />
           </div>
-          <h3 className="font-semibold text-slate-800 dark:text-white mb-1">Upload Excel File</h3>
-          <p className="text-slate-500 dark:text-slate-400 text-sm mb-4">Drag & drop or click to select</p>
+          <h3 className="font-bold text-lg text-slate-900 dark:text-white mb-2">Upload Spreadsheet</h3>
+          <p className="text-slate-500 dark:text-slate-400 text-sm mb-6 max-w-xs mx-auto leading-relaxed">Drag and drop your Excel file here, or click to browse your files</p>
           <input 
             type="file" 
             accept=".xlsx, .xls" 
@@ -458,9 +473,9 @@ const ExcelUploader: React.FC<{ onUpload: (data: any[]) => void }> = ({ onUpload
           />
           <label 
             htmlFor="file-upload" 
-            className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-sm font-medium text-slate-700 dark:text-white hover:bg-slate-50 dark:hover:bg-slate-600 shadow-sm transition-all hover:shadow-md active:scale-95"
+            className="cursor-pointer inline-flex items-center gap-2 px-6 py-3 bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-900 rounded-xl text-sm font-bold shadow-xl shadow-slate-900/10 dark:shadow-white/5 transition-all hover:-translate-y-0.5 active:translate-y-0 active:scale-95"
           >
-            <Icons.Upload className="w-4 h-4" /> Select File
+            <Icons.Upload className="w-4 h-4" /> Select Excel File
           </label>
         </>
       )}
@@ -748,94 +763,95 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex font-sans overflow-x-hidden transition-colors duration-200">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex font-sans overflow-x-hidden transition-colors duration-300 selection:bg-emerald-500/30 selection:text-emerald-900 dark:selection:text-emerald-200">
       
       {/* Mobile Sidebar Overlay */}
       {isMobileMenuOpen && (
         <div 
-          className="fixed inset-0 bg-black/50 z-30 lg:hidden backdrop-blur-sm transition-opacity"
+          className="fixed inset-0 bg-slate-900/60 z-30 lg:hidden backdrop-blur-sm transition-all duration-300"
           onClick={() => setIsMobileMenuOpen(false)}
         />
       )}
 
       {/* Sidebar */}
       <aside className={`
-        fixed inset-y-0 left-0 z-40 w-64 bg-white dark:bg-slate-950 text-slate-600 dark:text-slate-300 flex flex-col border-r border-slate-200 dark:border-slate-800
-        transform transition-transform duration-300 ease-in-out
+        fixed inset-y-0 left-0 z-40 w-72 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 flex flex-col border-r border-slate-100 dark:border-slate-800
+        transform transition-transform duration-300 ease-out shadow-2xl shadow-slate-200/50 dark:shadow-none
         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0
       `}>
-        <div className="p-6 flex items-center gap-3 text-slate-800 dark:text-white border-b border-slate-200 dark:border-slate-800">
-          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center shadow-lg shadow-blue-600/20">
+        <div className="p-8 flex items-center gap-4 text-slate-900 dark:text-white">
+          <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-500/30">
             <Icons.Dashboard className="w-5 h-5 text-white" />
           </div>
-          <span className="font-bold text-lg tracking-tight">Planning Dashboard</span>
+          <span className="font-bold text-xl tracking-tight">Nexus</span>
           <button 
             onClick={() => setIsMobileMenuOpen(false)} 
             className="lg:hidden ml-auto text-slate-400 hover:text-slate-900 dark:hover:text-white"
           >
-            <Icons.Close className="w-5 h-5" />
+            <Icons.Close className="w-6 h-6" />
           </button>
         </div>
 
-        <nav className="flex-1 p-4 space-y-2">
+        <nav className="flex-1 px-6 space-y-2 py-4">
+          <p className="px-4 text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-4">Main Menu</p>
           <button 
             onClick={() => { setFilterMode('all'); setShowUpload(false); }}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${filterMode === 'all' && !showUpload ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 font-medium' : 'hover:bg-slate-100 dark:hover:bg-slate-900'}`}
+            className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl transition-all duration-200 font-medium ${filterMode === 'all' && !showUpload ? 'bg-emerald-50 dark:bg-emerald-900/10 text-emerald-600 dark:text-emerald-400' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50 text-slate-600 dark:text-slate-400'}`}
           >
-            <Icons.Dashboard className="w-5 h-5" />
-            <span className="font-medium">Dashboard</span>
+            <Icons.Dashboard className={`w-5 h-5 ${filterMode === 'all' && !showUpload ? 'text-emerald-500' : 'text-slate-400'}`} />
+            <span>Dashboard</span>
           </button>
           <button 
             onClick={() => setShowUpload(true)} 
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${showUpload ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 font-medium' : 'hover:bg-slate-100 dark:hover:bg-slate-900'}`}
+            className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl transition-all duration-200 font-medium ${showUpload ? 'bg-emerald-50 dark:bg-emerald-900/10 text-emerald-600 dark:text-emerald-400' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50 text-slate-600 dark:text-slate-400'}`}
           >
-            <Icons.Excel className="w-5 h-5" />
-            <span className="font-medium">Import Data</span>
+            <Icons.Excel className={`w-5 h-5 ${showUpload ? 'text-emerald-500' : 'text-slate-400'}`} />
+            <span>Import Data</span>
           </button>
         </nav>
 
-        <div className="p-4 border-t border-slate-200 dark:border-slate-800">
-          <div className="flex items-center gap-3 mb-4 px-2">
-            <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center border border-slate-200 dark:border-slate-700">
-              <Icons.User className="w-5 h-5 text-slate-500 dark:text-slate-300" />
+        <div className="p-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 rounded-full bg-white dark:bg-slate-800 flex items-center justify-center border border-slate-200 dark:border-slate-700 shadow-sm">
+              <Icons.User className="w-5 h-5 text-slate-400 dark:text-slate-500" />
             </div>
             <div className="flex-1 overflow-hidden">
-              <p className="text-slate-900 dark:text-white font-medium truncate">{auth.user?.username}</p>
+              <p className="text-slate-900 dark:text-white font-semibold text-sm truncate">{auth.user?.username}</p>
               <p className="text-xs text-slate-500 capitalize">{auth.user?.role}</p>
             </div>
           </div>
-          <button onClick={handleLogout} className="flex items-center gap-2 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors px-2 text-sm font-medium">
+          <button onClick={handleLogout} className="w-full flex items-center justify-center gap-2 text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 transition-colors py-2 text-sm font-medium hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg">
             <Icons.Logout className="w-4 h-4" /> Sign Out
           </button>
         </div>
       </aside>
 
       {/* Main Content */}
-      <main className={`flex-1 p-4 md:p-8 w-full transition-all duration-300 ${isMobileMenuOpen ? 'lg:ml-64' : 'ml-0 lg:ml-64'}`}>
+      <main className={`flex-1 p-4 md:p-8 lg:p-10 w-full transition-all duration-300 ${isMobileMenuOpen ? 'lg:ml-72' : 'ml-0 lg:ml-72'}`}>
         
         {/* Header */}
-        <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+        <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-6">
           <div className="flex items-center gap-4 w-full md:w-auto">
             <button 
               onClick={() => setIsMobileMenuOpen(true)}
-              className="lg:hidden p-2 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg"
+              className="lg:hidden p-2.5 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl"
             >
               <Icons.Menu className="w-6 h-6" />
             </button>
             <div>
-              <h1 className="text-2xl font-bold text-slate-900 dark:text-white animate-fade-in">
-                {filterMode === 'delayed' ? 'Delayed Jobs' : 'Dashboard Overview'}
+              <h1 className="text-3xl font-bold text-slate-900 dark:text-white animate-fade-in tracking-tight">
+                {filterMode === 'delayed' ? 'Delayed Jobs' : 'Dashboard'}
               </h1>
-              <p className="text-slate-500 dark:text-slate-400 text-sm animate-fade-in-up">
-                {filterMode === 'delayed' ? 'Viewing records scheduled > 7 days ago' : "Welcome back, here's what's happening today."}
+              <p className="text-slate-500 dark:text-slate-400 mt-1 animate-fade-in-up font-medium">
+                {filterMode === 'delayed' ? 'Prioritize these overdue items' : "Overview of your planning operations"}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-4 w-full md:w-auto">
+          <div className="flex items-center gap-3 w-full md:w-auto">
             <button 
               onClick={toggleTheme}
-              className="p-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-600 dark:text-yellow-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+              className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-500 dark:text-yellow-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors shadow-sm"
               title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
             >
               {theme === 'dark' ? <Icons.Sun className="w-5 h-5" /> : <Icons.Moon className="w-5 h-5" />}
@@ -844,46 +860,46 @@ const App: React.FC = () => {
             {filterMode === 'delayed' && (
               <button 
                 onClick={() => setFilterMode('all')}
-                className="px-3 py-2 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-2"
+                className="px-4 py-3 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-800 rounded-xl text-sm font-bold hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2 shadow-sm"
               >
                 <Icons.Close className="w-4 h-4" /> Clear Filter
               </button>
             )}
-            <div className="relative flex-1 md:flex-none">
-              <Icons.Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+            <div className="relative flex-1 md:flex-none group">
+              <Icons.Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4 group-focus-within:text-emerald-500 transition-colors" />
               <input 
                 type="text" 
-                placeholder="Search label, ref, wayleave..." 
-                className="pl-10 pr-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 outline-none w-full md:w-64 transition-all"
+                placeholder="Search..." 
+                className="pl-11 pr-4 py-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none w-full md:w-72 transition-all shadow-sm font-medium"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
             </div>
-            <button className="p-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 relative hover:scale-105 transition-transform">
+            <button className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800 relative transition-all shadow-sm">
               <Icons.Bell className="w-5 h-5" />
               {notifications.length > 0 && (
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
+                <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-rose-500 rounded-full animate-pulse ring-2 ring-white dark:ring-slate-900"></span>
               )}
             </button>
           </div>
         </header>
 
         {/* Stats Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6 mb-10">
           {[
             { label: 'Total Records', value: records.length, icon: Icons.Excel, color: 'blue' },
-            { label: 'Assign planning', value: records.filter(r => r.status === 'Assign planning').length, icon: Icons.Clock, color: 'slate' },
+            { label: 'Pending', value: records.filter(r => r.status === 'Assign planning').length, icon: Icons.Clock, color: 'slate' },
             { label: 'Completed', value: records.filter(r => r.status === 'Engineer approval').length, icon: Icons.Check, color: 'emerald' },
             { label: 'In Design', value: records.filter(r => r.status.includes('Design')).length, icon: Icons.Edit, color: 'indigo' },
           ].map((stat, idx) => (
-            <div key={idx} className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm hover:border-blue-400 dark:hover:border-slate-600 transition-all hover:shadow-lg hover:-translate-y-1">
+            <div key={idx} className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm hover:shadow-lg transition-all hover:-translate-y-1 group">
               <div className="flex justify-between items-start">
                 <div>
-                  <p className="text-slate-500 dark:text-slate-400 text-sm font-medium">{stat.label}</p>
-                  <h3 className="text-2xl font-bold text-slate-900 dark:text-white mt-1">{stat.value}</h3>
+                  <p className="text-slate-500 dark:text-slate-400 text-xs font-bold uppercase tracking-wider mb-1">{stat.label}</p>
+                  <h3 className="text-3xl font-bold text-slate-900 dark:text-white">{stat.value}</h3>
                 </div>
-                <div className={`p-3 rounded-xl bg-${stat.color}-50 dark:bg-${stat.color}-900/30 text-${stat.color}-600 dark:text-${stat.color}-400`}>
-                  <stat.icon className="w-5 h-5" />
+                <div className={`p-3.5 rounded-xl bg-${stat.color}-50 dark:bg-${stat.color}-500/10 text-${stat.color}-600 dark:text-${stat.color}-400 group-hover:scale-110 transition-transform duration-300`}>
+                  <stat.icon className="w-6 h-6" />
                 </div>
               </div>
             </div>
@@ -892,10 +908,10 @@ const App: React.FC = () => {
 
         {/* Upload Area (Conditional) */}
         {showUpload && (
-          <div className="mb-8 animate-fade-in-down">
+          <div className="mb-10 animate-fade-in-down">
             <div className="flex justify-between items-center mb-4">
               <h3 className="font-bold text-lg text-slate-800 dark:text-white">Import Records</h3>
-              <button onClick={() => setShowUpload(false)} className="text-slate-400 hover:text-slate-900 dark:hover:text-white transition-transform hover:rotate-90">
+              <button onClick={() => setShowUpload(false)} className="text-slate-400 hover:text-slate-900 dark:hover:text-white transition-transform hover:rotate-90 p-2">
                 <Icons.Close className="w-5 h-5" />
               </button>
             </div>
@@ -907,106 +923,120 @@ const App: React.FC = () => {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           
           {/* List Section */}
-          <div className="lg:col-span-2 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col overflow-hidden h-[600px] animate-fade-in-up">
-            <div className="p-6 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center bg-white dark:bg-slate-800 sticky top-0 z-10">
-              <h2 className="font-bold text-slate-900 dark:text-white">
-                {filterMode === 'delayed' ? 'Delayed Jobs' : 'Record List'}
+          <div className="lg:col-span-2 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col overflow-hidden h-[650px] animate-fade-in-up">
+            <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-white dark:bg-slate-900 sticky top-0 z-10">
+              <h2 className="font-bold text-lg text-slate-900 dark:text-white tracking-tight">
+                {filterMode === 'delayed' ? 'Delayed Jobs' : 'Active Records'}
               </h2>
               <div className="flex gap-2">
                  <select 
-                    className="text-sm border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-700 dark:text-white rounded-lg px-3 py-1 outline-none focus:ring-2 focus:ring-blue-500/30"
+                    className="text-xs font-medium border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg px-3 py-1.5 outline-none focus:ring-2 focus:ring-emerald-500/20"
                     onChange={(e) => setSort({ key: e.target.value as keyof RecordItem, direction: 'desc' })}
                  >
-                   <option value="createdAt">Created</option>
-                   <option value="scheduleStartDate">Scheduled</option>
+                   <option value="createdAt">Newest First</option>
+                   <option value="scheduleStartDate">Schedule Date</option>
                    <option value="status">Status</option>
                    <option value="zone">Zone</option>
                  </select>
               </div>
             </div>
-            <div className="overflow-x-auto overflow-y-auto flex-1">
+            <div className="overflow-x-auto overflow-y-auto flex-1 custom-scrollbar">
               {isLoading ? (
                 <div className="h-full flex flex-col items-center justify-center text-slate-400 gap-4">
-                  <Icons.Spinner className="animate-spin w-8 h-8 text-blue-500" /> 
-                  <span className="animate-pulse">Loading records...</span>
+                  <Icons.Spinner className="animate-spin w-8 h-8 text-emerald-500" /> 
+                  <span className="animate-pulse font-medium">Loading records...</span>
                 </div>
               ) : (
                 <table className="w-full text-left border-collapse">
-                  <thead className="bg-slate-50 dark:bg-slate-900/50 text-slate-500 dark:text-slate-400 text-xs uppercase font-medium sticky top-0">
+                  <thead className="bg-slate-50/80 dark:bg-slate-950/50 text-slate-500 dark:text-slate-400 text-xs uppercase font-bold tracking-wider sticky top-0 backdrop-blur-sm z-10">
                     <tr>
                       <th className="px-6 py-4 w-16">#</th>
                       <th className="px-6 py-4">Reference</th>
-                      <th className="px-6 py-4">Label</th>
+                      <th className="px-6 py-4">Details</th>
                       <th className="px-6 py-4">Status</th>
-                      <th className="px-6 py-4">USP Status</th>
+                      <th className="px-6 py-4">USP</th>
                       <th className="px-6 py-4">Scheduled</th>
                       <th className="px-6 py-4">Action</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                  <tbody className="divide-y divide-slate-50 dark:divide-slate-800/50">
                     {filteredRecords.map((record, index) => (
-                      <tr key={record.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors group">
-                        <td className="px-6 py-4 text-sm text-slate-500 dark:text-slate-500">
+                      <tr key={record.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group">
+                        <td className="px-6 py-4 text-xs font-medium text-slate-400 dark:text-slate-600">
                           {index + 1}
                         </td>
-                        <td className="px-6 py-4 text-sm font-mono text-slate-600 dark:text-slate-400">
-                          {record.referenceNumber}
+                        <td className="px-6 py-4">
+                          <span className="font-mono text-xs text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-md">
+                            {record.referenceNumber}
+                          </span>
                         </td>
                         <td className="px-6 py-4">
-                          <div className="font-medium text-slate-900 dark:text-white">{record.label}</div>
-                          <div className="text-xs text-slate-500 dark:text-slate-500">Zone: {record.zone}</div>
+                          <div className="font-semibold text-slate-900 dark:text-white text-sm mb-0.5">{record.label}</div>
+                          <div className="flex items-center gap-2">
+                             <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wide">Zone: {record.zone}</span>
+                          </div>
                         </td>
                         <td className="px-6 py-4">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold capitalize shadow-sm ${getStatusColor(record.status)}`}>
+                          <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold capitalize shadow-sm tracking-wide ${getStatusColor(record.status)}`}>
                             {record.status}
                           </span>
                         </td>
                         <td className="px-6 py-4">
                            {record.requireUSP ? (
-                             <div className="flex flex-col gap-1">
-                               <span className="text-xs font-semibold bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300 px-2 py-0.5 rounded w-fit animate-pulse-slow">
-                                 Required
-                               </span>
+                             <div className="flex flex-col gap-1.5">
+                               <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Required</span>
                                {record.sentToUSPDate ? (
-                                 <span className="text-xs text-slate-500 dark:text-slate-400">
-                                   Sent: {new Date(record.sentToUSPDate).toLocaleDateString()}
+                                 <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1">
+                                   <Icons.Check className="w-3 h-3" /> Sent
                                  </span>
                                ) : (
-                                 <span className="text-xs text-amber-600 dark:text-amber-500 font-medium">Not Sent</span>
+                                 <span className="text-xs text-amber-600 dark:text-amber-500 font-medium flex items-center gap-1">
+                                   <Icons.Clock className="w-3 h-3" /> Pending
+                                 </span>
                                )}
                              </div>
                            ) : (
-                             <span className="text-slate-400 text-sm">-</span>
+                             <span className="text-slate-300 dark:text-slate-600 text-lg">&bull;</span>
                            )}
                         </td>
-                        <td className="px-6 py-4 text-slate-500 dark:text-slate-500 text-sm">
-                          {new Date(record.scheduleStartDate).toLocaleDateString()}
+                        <td className="px-6 py-4 text-slate-600 dark:text-slate-400 text-sm font-medium">
+                          {new Date(record.scheduleStartDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
                         </td>
-                        <td className="px-6 py-4 flex gap-2">
-                           <button 
-                            onClick={() => setEditingRecord(record)}
-                            className="p-1.5 hover:bg-blue-50 dark:hover:bg-blue-900/30 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 rounded-lg transition-colors group-hover:opacity-100 lg:opacity-0"
-                            title="Edit Record"
-                          >
-                            <Icons.Edit className="w-4 h-4" />
-                          </button>
-                          <button 
-                            onClick={() => handleDelete(record.id)}
-                            className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/30 text-slate-400 hover:text-red-600 dark:hover:text-red-400 rounded-lg transition-colors group-hover:opacity-100 lg:opacity-0"
-                            title="Delete Record"
-                          >
-                            <Icons.Trash className="w-4 h-4" />
-                          </button>
+                        <td className="px-6 py-4">
+                          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                             <button 
+                              onClick={() => setEditingRecord(record)}
+                              className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 rounded-lg transition-colors"
+                              title="Edit Record"
+                            >
+                              <Icons.Edit className="w-4 h-4" />
+                            </button>
+                            <button 
+                              onClick={() => handleDelete(record.id)}
+                              className="p-2 hover:bg-rose-50 dark:hover:bg-rose-900/20 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 rounded-lg transition-colors"
+                              title="Delete Record"
+                            >
+                              <Icons.Trash className="w-4 h-4" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
                     {filteredRecords.length === 0 && (
                       <tr>
-                        <td colSpan={7} className="px-6 py-12 text-center text-slate-500 dark:text-slate-400">
-                          No records found matching your criteria.
+                        <td colSpan={7} className="px-6 py-20 text-center">
+                          <div className="flex flex-col items-center justify-center">
+                            <div className="w-16 h-16 bg-slate-50 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4">
+                              <Icons.Search className="w-8 h-8 text-slate-300 dark:text-slate-600" />
+                            </div>
+                            <p className="text-slate-500 dark:text-slate-400 font-medium">No records found matching your criteria.</p>
+                            <button onClick={() => { setSearch(''); setFilterMode('all'); }} className="mt-2 text-emerald-600 dark:text-emerald-400 text-sm font-bold hover:underline">
+                              Clear Filters
+                            </button>
+                          </div>
                         </td>
                       </tr>
-                    )}
+                    ))}
                   </tbody>
                 </table>
               )}
@@ -1015,38 +1045,32 @@ const App: React.FC = () => {
 
           {/* Analytics Section */}
           <div className="space-y-6">
-            <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm h-80 flex flex-col animate-fade-in-up" style={{animationDelay: '0.1s'}}>
-              <h3 className="font-bold text-slate-900 dark:text-white mb-6">Status Distribution</h3>
+            <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm h-80 flex flex-col animate-fade-in-up" style={{animationDelay: '0.1s'}}>
+              <div className="flex justify-between items-center mb-6">
+                 <h3 className="font-bold text-slate-900 dark:text-white">Status Distribution</h3>
+                 <div className="bg-emerald-50 dark:bg-emerald-900/20 p-1.5 rounded-lg">
+                   <Icons.Dashboard className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                 </div>
+              </div>
               <div className="w-full h-64">
                  <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={statusData}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={theme === 'dark' ? '#334155' : '#e2e8f0'} />
-                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: theme === 'dark' ? '#94a3b8' : '#64748b', fontSize: 10}} dy={10} angle={-15} textAnchor="end" />
-                      <YAxis axisLine={false} tickLine={false} tick={{fill: theme === 'dark' ? '#94a3b8' : '#64748b', fontSize: 12}} />
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={theme === 'dark' ? '#1e293b' : '#f1f5f9'} />
+                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: theme === 'dark' ? '#64748b' : '#94a3b8', fontSize: 10}} dy={10} angle={-15} textAnchor="end" />
+                      <YAxis axisLine={false} tickLine={false} tick={{fill: theme === 'dark' ? '#64748b' : '#94a3b8', fontSize: 12}} />
                       <Tooltip 
-                        cursor={{fill: theme === 'dark' ? '#1e293b' : '#f1f5f9'}}
+                        cursor={{fill: theme === 'dark' ? '#1e293b' : '#f8fafc', opacity: 0.4}}
                         contentStyle={{
-                           borderRadius: '8px', 
-                           border: theme === 'dark' ? '1px solid #475569' : 'none', 
+                           borderRadius: '12px', 
+                           border: 'none', 
                            backgroundColor: theme === 'dark' ? '#1e293b' : '#fff', 
                            color: theme === 'dark' ? '#f8fafc' : '#1e293b',
-                           boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
+                           boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)'
                         }}
                       />
-                      <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                      <Bar dataKey="value" radius={[6, 6, 0, 0]}>
                         {statusData.map((entry, index) => (
-                          // Mapped colors consistent with sequence
-                          <Cell key={`cell-${index}`} fill={[
-                            '#e2e8f0', // Assign Planning (Slate)
-                            '#dbeafe', // Site Visit (Blue)
-                            '#e0e7ff', // Design (Indigo)
-                            '#cffafe', // Design Approval (Cyan)
-                            '#facc15', // GIS (Yellow)
-                            '#dc2626', // Wayleave (Red)
-                            '#ffedd5', // Cost (Orange)
-                            '#f3e8ff', // Utilities (Purple)
-                            '#059669'  // Engineer Approval (Emerald)
-                          ][index % 9]} />
+                          <Cell key={`cell-${index}`} fill={getChartColor(entry.name, theme)} />
                         ))}
                       </Bar>
                     </BarChart>
@@ -1055,8 +1079,13 @@ const App: React.FC = () => {
             </div>
 
             {/* Zone Chart */}
-            <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm h-80 flex flex-col animate-fade-in-up" style={{animationDelay: '0.2s'}}>
-              <h3 className="font-bold text-slate-900 dark:text-white mb-2">Zone Activity</h3>
+            <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm h-80 flex flex-col animate-fade-in-up" style={{animationDelay: '0.2s'}}>
+               <div className="flex justify-between items-center mb-2">
+                 <h3 className="font-bold text-slate-900 dark:text-white">Zone Activity</h3>
+                 <div className="bg-indigo-50 dark:bg-indigo-900/20 p-1.5 rounded-lg">
+                   <Icons.Filter className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                 </div>
+              </div>
                <div className="w-full h-64">
                  <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
@@ -1066,9 +1095,9 @@ const App: React.FC = () => {
                         cy="50%"
                         innerRadius={60}
                         outerRadius={80}
-                        fill="#8884d8"
                         paddingAngle={5}
                         dataKey="value"
+                        stroke="none"
                       >
                         {zoneData.map((entry, index) => (
                           <Cell key={`cell-${index}`} fill={['#6366f1', '#8b5cf6', '#ec4899', '#14b8a6'][index % 4]} />
@@ -1076,14 +1105,14 @@ const App: React.FC = () => {
                       </Pie>
                       <Tooltip 
                         contentStyle={{
-                           borderRadius: '8px', 
-                           border: theme === 'dark' ? '1px solid #475569' : 'none', 
+                           borderRadius: '12px', 
+                           border: 'none', 
                            backgroundColor: theme === 'dark' ? '#1e293b' : '#fff', 
                            color: theme === 'dark' ? '#f8fafc' : '#1e293b',
-                           boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
+                           boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)'
                         }}
                       />
-                      <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{color: theme === 'dark' ? '#94a3b8' : '#64748b'}} />
+                      <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{color: theme === 'dark' ? '#94a3b8' : '#64748b', fontSize: '12px', fontWeight: 500}} />
                     </PieChart>
                  </ResponsiveContainer>
                </div>
@@ -1127,6 +1156,11 @@ const App: React.FC = () => {
         .animate-bounce-subtle { animation: bounceSubtle 2s infinite ease-in-out; }
         .animate-shake { animation: shake 0.4s ease-in-out; }
         .animate-pulse-slow { animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+        
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        .dark .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; }
       `}</style>
     </div>
   );
