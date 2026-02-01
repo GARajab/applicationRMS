@@ -1158,31 +1158,6 @@ const App: React.FC = () => {
           onClick={handleNotificationClick}
         />
       ))}
-      
-      {/* Animation Styles */}
-      <style>{`
-        @keyframes fadeInDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes fadeInUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        @keyframes slideInRight { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
-        @keyframes scaleIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
-        @keyframes bounceSubtle { 0%, 100% { transform: translateY(-3px); } 50% { transform: translateY(3px); } }
-        @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
-        
-        .animate-fade-in-down { animation: fadeInDown 0.3s ease-out forwards; }
-        .animate-fade-in-up { animation: fadeInUp 0.5s ease-out forwards; }
-        .animate-fade-in { animation: fadeIn 0.4s ease-out forwards; }
-        .animate-slide-in-right { animation: slideInRight 0.3s ease-out forwards; }
-        .animate-scale-in { animation: scaleIn 0.2s ease-out forwards; }
-        .animate-bounce-subtle { animation: bounceSubtle 2s infinite ease-in-out; }
-        .animate-shake { animation: shake 0.4s ease-in-out; }
-        .animate-pulse-slow { animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
-        
-        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
-        .dark .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; }
-      `}</style>
     </div>
   );
 };
