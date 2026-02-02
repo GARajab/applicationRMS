@@ -600,7 +600,7 @@ const App: React.FC = () => {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [showUpload, setShowUpload] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false); // Desktop sidebar state
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true); // Default collapsed
   const [statusFilter, setStatusFilter] = useState('Total'); // New Status Filter Tab State
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
   
@@ -724,10 +724,6 @@ const App: React.FC = () => {
 
   const handleNotificationClick = (notification: AppNotification) => {
     if (notification.type === NotificationType.WARNING) {
-      // Logic handled via tabs now, but keeping for backward compatibility if needed, 
-      // though typically this sets a filter. Let's just reset to all for now or create a special 'delayed' filter later if requested.
-      // For now, removing the 'delayed' mode state to simplify top tabs logic, 
-      // but if the user clicks a warning, we can just show them the alert.
       setNotifications(prev => prev.filter(n => n.id !== notification.id));
     }
   };
@@ -1051,10 +1047,10 @@ const App: React.FC = () => {
           </div>
         </header>
 
-        {/* Status Filter Tabs (Replacing Old Stats Grid) */}
+        {/* Status Filter Tabs (Removed Total) */}
         <div className="mb-8 overflow-x-auto pb-2 custom-scrollbar -mx-4 px-4 md:mx-0 md:px-0">
           <div className="flex gap-3 min-w-max">
-            {['Total', ...STATUS_SEQUENCE].map((status) => {
+            {STATUS_SEQUENCE.map((status) => {
               const count = statusCounts[status] || 0;
               const isActive = statusFilter === status;
               return (
@@ -1234,8 +1230,31 @@ const App: React.FC = () => {
             </div>
           </div>
 
-          {/* Analytics Section */}
+          {/* Analytics Section (Right Column) */}
           <div className="space-y-6">
+            
+            {/* Total Records Card (Moved here) */}
+             <div className="bg-gradient-to-br from-emerald-500 to-teal-600 p-6 rounded-3xl shadow-lg shadow-emerald-500/20 text-white flex flex-col animate-fade-in-up relative overflow-hidden group">
+               <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-2xl -mr-16 -mt-16 pointer-events-none"></div>
+               <div className="flex justify-between items-start mb-4 relative z-10">
+                 <div>
+                   <p className="text-emerald-100 font-medium text-sm uppercase tracking-wide">Total Projects</p>
+                   <h3 className="text-4xl font-bold mt-1">{statusCounts['Total']}</h3>
+                 </div>
+                 <div className="bg-white/20 p-2 rounded-xl">
+                   <Icons.Dashboard className="w-6 h-6 text-white" />
+                 </div>
+               </div>
+               <div className="relative z-10 mt-auto">
+                  <button 
+                    onClick={() => setStatusFilter('Total')}
+                    className="text-xs font-bold bg-white/20 hover:bg-white/30 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 w-fit"
+                  >
+                    View All Records <Icons.Right className="w-3 h-3" />
+                  </button>
+               </div>
+            </div>
+
             <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm h-80 flex flex-col animate-fade-in-up">
               <div className="flex justify-between items-center mb-6">
                  <h3 className="font-bold text-slate-900 dark:text-white">Status Distribution</h3>
@@ -1245,9 +1264,18 @@ const App: React.FC = () => {
               </div>
               <div className="w-full h-64">
                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={chartStatusData}>
+                    <BarChart data={chartStatusData} margin={{ top: 10, right: 10, left: -20, bottom: 40 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={theme === 'dark' ? '#1e293b' : '#f1f5f9'} />
-                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: theme === 'dark' ? '#64748b' : '#94a3b8', fontSize: 10}} dy={10} angle={-15} textAnchor="end" />
+                      <XAxis 
+                        dataKey="name" 
+                        axisLine={false} 
+                        tickLine={false} 
+                        tick={{fill: theme === 'dark' ? '#64748b' : '#94a3b8', fontSize: 10}} 
+                        angle={-45} 
+                        textAnchor="end"
+                        interval={0}
+                        height={60}
+                      />
                       <YAxis axisLine={false} tickLine={false} tick={{fill: theme === 'dark' ? '#64748b' : '#94a3b8', fontSize: 12}} />
                       <Tooltip 
                         cursor={{fill: theme === 'dark' ? '#1e293b' : '#f8fafc', opacity: 0.4}}
