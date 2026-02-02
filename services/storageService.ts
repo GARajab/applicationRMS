@@ -26,9 +26,15 @@ export const getRecords = async (): Promise<RecordItem[]> => {
 };
 
 export const addRecord = async (record: RecordItem): Promise<RecordItem | null> => {
+  // Create a copy and remove 'id' if it is empty so Supabase generates a valid UUID
+  const payload: any = { ...record };
+  if (!payload.id) {
+    delete payload.id;
+  }
+
   const { data, error } = await supabase
     .from('records')
-    .insert([record])
+    .insert([payload])
     .select()
     .single();
 
