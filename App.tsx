@@ -12,7 +12,7 @@ const STATUS_SEQUENCE = [
   "Assign planning",          // 1
   "Site Visit",               // 2
   "Design",                   // 3
-  "Design approval",          // 4 (Note: Case sensitive in logic, we'll normalize)
+  "Design approval",          // 4
   "GIS digitalization",       // 5
   "Wayleave",                 // 6
   "Cost estimation",          // 7
@@ -21,7 +21,7 @@ const STATUS_SEQUENCE = [
   "Redesign",                 // 10
   "Suspended by EDD",         // 11
   "Work Design",              // 12
-  "Cancelled"                 // Optional: Terminal state
+  "Cancelled"                 // Optional: Terminal state, highest priority to prevent overwrite by lower statuses
 ];
 
 // --- Helper Functions ---
@@ -48,7 +48,7 @@ const normalizeStatus = (s: string) => s.trim().toLowerCase();
 const getStatusColor = (status: string) => {
   const s = normalizeStatus(status);
   
-  if (s === 'passed' || s === 'engineer approval' || s === 'work design') {
+  if (s === 'passed' || s === 'engineer approval' || s === 'work design' || s === 'design approval') {
     return 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20';
   }
   
@@ -79,7 +79,7 @@ const getStatusColor = (status: string) => {
 const getChartColor = (status: string, theme: 'light' | 'dark') => {
   const s = normalizeStatus(status);
   
-  if (s === 'passed' || s === 'engineer approval' || s === 'work design') {
+  if (s === 'passed' || s === 'engineer approval' || s === 'work design' || s === 'design approval') {
     return '#10b981'; // emerald-500
   }
   if (s === 'suspended by edd') {
@@ -771,41 +771,51 @@ const App: React.FC = () => {
 
     // Helper to find index in sequence (case-insensitive)
     const getStatusIndex = (status: string) => {
-      const idx = STATUS_SEQUENCE.findIndex(s => s.toLowerCase() === status.toLowerCase());
-      return idx === -1 ? -1 : idx;
+      // Normalize comparison to be very forgiving
+      return STATUS_SEQUENCE.findIndex(s => s.toLowerCase() === status.trim().toLowerCase());
     };
 
     for (const newRecord of newRecords) {
-      // Logic for detecting existing records:
-      // 1. Matches an existing Reference Number
-      // 2. Matches an existing Wayleave Number (if provided and not empty)
+      // Improved matching: Case insensitive, trim
       const existingRecord = currentRecords.find(existing => {
-        const isRefMatch = existing.referenceNumber && 
-                           newRecord.referenceNumber && 
-                           existing.referenceNumber === newRecord.referenceNumber;
+        const existingRef = existing.referenceNumber?.trim().toLowerCase();
+        const newRef = newRecord.referenceNumber?.trim().toLowerCase();
+        const isRefMatch = existingRef && newRef && existingRef === newRef;
         
-        const isWayleaveMatch = existing.wayleaveNumber && 
-                               newRecord.wayleaveNumber && 
-                               newRecord.wayleaveNumber !== '' && 
-                               existing.wayleaveNumber === newRecord.wayleaveNumber;
+        const existingWayleave = existing.wayleaveNumber?.trim().toLowerCase();
+        const newWayleave = newRecord.wayleaveNumber?.trim().toLowerCase();
+        const isWayleaveMatch = existingWayleave && newWayleave && newWayleave !== '' && existingWayleave === newWayleave;
         
         return isRefMatch || isWayleaveMatch;
       });
 
       if (existingRecord) {
-        // PRIORITY LOGIC:
-        // Only update if NEW status is HIGHER priority (greater index) than OLD status.
-        // If New Index <= Old Index, we ignore (don't downgrade or stay same via upload).
         const oldIndex = getStatusIndex(existingRecord.status);
         const newIndex = getStatusIndex(newRecord.status);
 
-        if (newIndex > -1 && newIndex > oldIndex) {
-          // Update status because new status is further along the pipeline
-          await updateRecord(existingRecord.id, { status: newRecord.status });
-          updatedCount++;
+        // PRIORITY LOGIC:
+        // Update if new status is HIGHER priority (later in sequence)
+        // OR if old status was unknown (-1) and new one is known
+        if (newIndex !== -1 && (oldIndex === -1 || newIndex > oldIndex)) {
+            // Update fields. Merge new data into old.
+            const updates: Partial<RecordItem> = {
+                status: newRecord.status,
+                label: newRecord.label || existingRecord.label,
+                block: newRecord.block || existingRecord.block,
+                zone: newRecord.zone || existingRecord.zone,
+                scheduleStartDate: newRecord.scheduleStartDate || existingRecord.scheduleStartDate,
+                // Only update wayleave/account if present in new
+                wayleaveNumber: newRecord.wayleaveNumber || existingRecord.wayleaveNumber,
+                accountNumber: newRecord.accountNumber || existingRecord.accountNumber,
+                requireUSP: newRecord.requireUSP,
+                sentToUSPDate: newRecord.sentToUSPDate || existingRecord.sentToUSPDate,
+            };
+
+            await updateRecord(existingRecord.id, updates);
+            updatedCount++;
         } else {
-          // Status is older or same, or unknown -> Ignore
-          ignoredCount++;
+            // Status is older or same -> Ignore
+            ignoredCount++;
         }
       } else {
         // New Record
@@ -819,8 +829,8 @@ const App: React.FC = () => {
     
     let message = '';
     if (addedCount > 0) message += `Added ${addedCount} new. `;
-    if (updatedCount > 0) message += `Updated status for ${updatedCount}. `;
-    if (ignoredCount > 0) message += `Ignored ${ignoredCount} (duplicates/older status).`;
+    if (updatedCount > 0) message += `Updated ${updatedCount}. `;
+    if (ignoredCount > 0) message += `Ignored ${ignoredCount} (older status).`;
     
     addNotification({
       type: (addedCount > 0 || updatedCount > 0) ? NotificationType.SUCCESS : NotificationType.INFO,
