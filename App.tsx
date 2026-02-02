@@ -41,7 +41,7 @@ const parseExcelDate = (value: any): string | undefined => {
 };
 
 // Normalize status string for comparison
-const normalizeStatus = (s: string) => s.trim().toLowerCase();
+const normalizeStatus = (s: string) => (s || '').trim().toLowerCase();
 
 // Modern Color Mapping
 const getStatusColor = (status: string) => {
@@ -710,7 +710,7 @@ const App: React.FC = () => {
   const checkAgingRecords = (data: RecordItem[]) => {
     const sevenDaysAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
     const oldPending = data.filter(r => 
-      (r.status.toLowerCase() !== 'completed' && r.status !== 'Passed' && r.status !== 'Engineer approval' && r.status.toLowerCase() !== 'archived') && 
+      ((r.status || '').toLowerCase() !== 'completed' && r.status !== 'Passed' && r.status !== 'Engineer approval' && (r.status || '').toLowerCase() !== 'archived') && 
       new Date(r.scheduleStartDate).getTime() < sevenDaysAgo
     );
 
@@ -775,7 +775,7 @@ const App: React.FC = () => {
     // Helper to find index in sequence (case-insensitive)
     const getStatusIndex = (status: string) => {
       // Normalize comparison to be very forgiving
-      return STATUS_SEQUENCE.findIndex(s => s.toLowerCase() === status.trim().toLowerCase());
+      return STATUS_SEQUENCE.findIndex(s => s.toLowerCase() === (status || '').trim().toLowerCase());
     };
 
     for (const newRecord of newRecords) {
@@ -885,11 +885,11 @@ const App: React.FC = () => {
     // 2. Search Filter
     if (search.trim()) {
        result = result.filter(r => 
-        r.label.toLowerCase().includes(search.toLowerCase()) ||
-        r.referenceNumber.toLowerCase().includes(search.toLowerCase()) ||
-        r.wayleaveNumber.toLowerCase().includes(search.toLowerCase()) ||
-        r.accountNumber.toLowerCase().includes(search.toLowerCase()) ||
-        r.zone.toLowerCase().includes(search.toLowerCase())
+        (r.label || '').toLowerCase().includes(search.toLowerCase()) ||
+        (r.referenceNumber || '').toLowerCase().includes(search.toLowerCase()) ||
+        (r.wayleaveNumber || '').toLowerCase().includes(search.toLowerCase()) ||
+        (r.accountNumber || '').toLowerCase().includes(search.toLowerCase()) ||
+        (r.zone || '').toLowerCase().includes(search.toLowerCase())
       );
     }
 
@@ -913,7 +913,8 @@ const App: React.FC = () => {
     
     records.forEach(r => {
       // Find the matching status key case-insensitively
-      const matchingKey = STATUS_SEQUENCE.find(s => s.toLowerCase() === r.status.toLowerCase());
+      const currentStatus = (r.status || '').toLowerCase();
+      const matchingKey = STATUS_SEQUENCE.find(s => s.toLowerCase() === currentStatus);
       if (matchingKey) {
         counts[matchingKey]++;
       } else {
@@ -936,7 +937,8 @@ const App: React.FC = () => {
 
   const zoneData = useMemo(() => {
     const counts = records.reduce((acc, r) => {
-      acc[r.zone] = (acc[r.zone] || 0) + 1;
+      const z = r.zone || 'Unknown';
+      acc[z] = (acc[z] || 0) + 1;
       return acc;
     }, {} as Record<string, number>);
     return Object.entries(counts).map(([name, value]) => ({ name, value }));
