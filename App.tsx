@@ -921,60 +921,66 @@ const App: React.FC = () => {
 
       {/* Sidebar (Collapsible on Desktop) */}
       <aside className={`
-        fixed inset-y-0 left-0 z-40 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 flex flex-col border-r border-slate-100 dark:border-slate-800
-        transform transition-all duration-300 ease-in-out shadow-2xl shadow-slate-200/50 dark:shadow-none
-        ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} 
-        ${isSidebarCollapsed ? 'lg:-translate-x-full lg:w-0' : 'lg:translate-x-0 lg:w-72'}
+        fixed inset-y-0 left-0 z-50 bg-white dark:bg-slate-900 
+        border-r border-slate-100 dark:border-slate-800
+        transition-all duration-300 ease-in-out
+        flex flex-col overflow-hidden
+        ${isMobileMenuOpen ? 'translate-x-0 w-72 shadow-2xl' : '-translate-x-full w-72'}
+        lg:translate-x-0
+        ${isSidebarCollapsed ? 'lg:w-0 lg:border-none' : 'lg:w-72 lg:border-r'}
       `}>
-        <div className="p-8 flex items-center gap-4 text-slate-900 dark:text-white">
-          <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-500/30 shrink-0">
-            <Icons.Dashboard className="w-5 h-5 text-white" />
-          </div>
-          <span className="font-bold text-xl tracking-tight whitespace-nowrap">Nexus</span>
-          <button 
-            onClick={() => setIsMobileMenuOpen(false)} 
-            className="lg:hidden ml-auto text-slate-400 hover:text-slate-900 dark:hover:text-white"
-          >
-            <Icons.Close className="w-6 h-6" />
-          </button>
-        </div>
-
-        <nav className="flex-1 px-6 space-y-2 py-4 overflow-hidden">
-          <p className="px-4 text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-4 whitespace-nowrap">Main Menu</p>
-          <button 
-            onClick={() => { setStatusFilter('Total'); setShowUpload(false); }}
-            className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl transition-all duration-200 font-medium whitespace-nowrap ${statusFilter === 'Total' && !showUpload ? 'bg-emerald-50 dark:bg-emerald-900/10 text-emerald-600 dark:text-emerald-400' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50 text-slate-600 dark:text-slate-400'}`}
-          >
-            <Icons.Dashboard className={`w-5 h-5 flex-shrink-0 ${statusFilter === 'Total' && !showUpload ? 'text-emerald-500' : 'text-slate-400'}`} />
-            <span>Dashboard</span>
-          </button>
-          <button 
-            onClick={() => setShowUpload(true)} 
-            className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl transition-all duration-200 font-medium whitespace-nowrap ${showUpload ? 'bg-emerald-50 dark:bg-emerald-900/10 text-emerald-600 dark:text-emerald-400' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50 text-slate-600 dark:text-slate-400'}`}
-          >
-            <Icons.Excel className={`w-5 h-5 flex-shrink-0 ${showUpload ? 'text-emerald-500' : 'text-slate-400'}`} />
-            <span>Import Data</span>
-          </button>
-        </nav>
-
-        <div className="p-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 overflow-hidden">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 rounded-full bg-white dark:bg-slate-800 flex items-center justify-center border border-slate-200 dark:border-slate-700 shadow-sm shrink-0">
-              <Icons.User className="w-5 h-5 text-slate-400 dark:text-slate-500" />
+        {/* Inner Content Wrapper with fixed width to prevent squashing */}
+        <div className="w-72 flex flex-col h-full">
+          <div className="p-8 flex items-center gap-4 text-slate-900 dark:text-white">
+            <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-500/30 shrink-0">
+              <Icons.Dashboard className="w-5 h-5 text-white" />
             </div>
-            <div className="flex-1 overflow-hidden">
-              <p className="text-slate-900 dark:text-white font-semibold text-sm truncate">{auth.user?.username}</p>
-              <p className="text-xs text-slate-500 capitalize">{auth.user?.role}</p>
-            </div>
+            <span className="font-bold text-xl tracking-tight whitespace-nowrap">Nexus</span>
+            <button 
+              onClick={() => setIsMobileMenuOpen(false)} 
+              className="lg:hidden ml-auto text-slate-400 hover:text-slate-900 dark:hover:text-white"
+            >
+              <Icons.Close className="w-6 h-6" />
+            </button>
           </div>
-          <button onClick={handleLogout} className="w-full flex items-center justify-center gap-2 text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 transition-colors py-2 text-sm font-medium hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg whitespace-nowrap">
-            <Icons.Logout className="w-4 h-4" /> Sign Out
-          </button>
+
+          <nav className="flex-1 px-6 space-y-2 py-4 overflow-hidden">
+            <p className="px-4 text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-4 whitespace-nowrap">Main Menu</p>
+            <button 
+              onClick={() => { setStatusFilter('Total'); setShowUpload(false); }}
+              className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl transition-all duration-200 font-medium whitespace-nowrap ${statusFilter === 'Total' && !showUpload ? 'bg-emerald-50 dark:bg-emerald-900/10 text-emerald-600 dark:text-emerald-400' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50 text-slate-600 dark:text-slate-400'}`}
+            >
+              <Icons.Dashboard className={`w-5 h-5 flex-shrink-0 ${statusFilter === 'Total' && !showUpload ? 'text-emerald-500' : 'text-slate-400'}`} />
+              <span>Dashboard</span>
+            </button>
+            <button 
+              onClick={() => setShowUpload(true)} 
+              className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl transition-all duration-200 font-medium whitespace-nowrap ${showUpload ? 'bg-emerald-50 dark:bg-emerald-900/10 text-emerald-600 dark:text-emerald-400' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50 text-slate-600 dark:text-slate-400'}`}
+            >
+              <Icons.Excel className={`w-5 h-5 flex-shrink-0 ${showUpload ? 'text-emerald-500' : 'text-slate-400'}`} />
+              <span>Import Data</span>
+            </button>
+          </nav>
+
+          <div className="p-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 overflow-hidden">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-white dark:bg-slate-800 flex items-center justify-center border border-slate-200 dark:border-slate-700 shadow-sm shrink-0">
+                <Icons.User className="w-5 h-5 text-slate-400 dark:text-slate-500" />
+              </div>
+              <div className="flex-1 overflow-hidden">
+                <p className="text-slate-900 dark:text-white font-semibold text-sm truncate">{auth.user?.username}</p>
+                <p className="text-xs text-slate-500 capitalize">{auth.user?.role}</p>
+              </div>
+            </div>
+            <button onClick={handleLogout} className="w-full flex items-center justify-center gap-2 text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 transition-colors py-2 text-sm font-medium hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg whitespace-nowrap">
+              <Icons.Logout className="w-4 h-4" /> Sign Out
+            </button>
+          </div>
         </div>
       </aside>
 
       {/* Main Content (Dynamically adjusted margin) */}
-      <main className={`flex-1 p-4 md:p-8 lg:p-10 w-full transition-all duration-300 ease-in-out ${isSidebarCollapsed ? 'ml-0' : 'lg:ml-72'}`}>
+      <main className={`flex-1 p-4 md:p-8 lg:p-10 w-full transition-all duration-300 ease-in-out ${isSidebarCollapsed ? 'lg:ml-0' : 'lg:ml-72'}`}>
         
         {/* Header */}
         <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-6">
