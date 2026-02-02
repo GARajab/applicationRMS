@@ -20,8 +20,7 @@ const STATUS_SEQUENCE = [
   "Engineer approval",        // 9
   "Redesign",                 // 10
   "Suspended by EDD",         // 11
-  "Work Design",              // 12
-  "Cancelled"                 // Optional: Terminal state, highest priority to prevent overwrite by lower statuses
+  "Work Design"               // 12
 ];
 
 // --- Helper Functions ---
@@ -48,30 +47,47 @@ const normalizeStatus = (s: string) => s.trim().toLowerCase();
 const getStatusColor = (status: string) => {
   const s = normalizeStatus(status);
   
-  if (s === 'passed' || s === 'engineer approval' || s === 'work design' || s === 'design approval') {
+  // Emerald: Approvals & Final Stages
+  if (['passed', 'engineer approval', 'work design', 'design approval'].includes(s)) {
     return 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20';
   }
   
-  if (s === 'suspended by edd') {
+  // Red: Issues / Suspensions
+  if (s === 'suspended by edd' || s === 'cancelled') {
     return 'bg-red-50 text-red-700 border border-red-200 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/20 animate-pulse';
   }
 
-  if (s === 'cancelled' || s === 'canceled') {
-    return 'bg-slate-200 text-slate-700 border border-slate-300 dark:bg-slate-700 dark:text-slate-300 dark:border-slate-600 animate-pulse';
-  }
-
+  // Amber: GIS
   if (s.includes('gis')) {
     return 'bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20';
   }
   
+  // Rose: Wayleave
   if (s.includes('wayleave')) {
     return 'bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/20';
   }
 
+  // Purple: Redesign
   if (s === 'redesign') {
     return 'bg-purple-50 text-purple-700 border border-purple-200 dark:bg-purple-500/10 dark:text-purple-400 dark:border-purple-500/20';
   }
+
+  // Blue: Early Stages
+  if (['assign planning', 'site visit'].includes(s)) {
+     return 'bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/20';
+  }
+
+  // Cyan: Design & Drawings
+  if (['design', 'attach utilities drawing'].includes(s)) {
+     return 'bg-cyan-50 text-cyan-700 border border-cyan-200 dark:bg-cyan-500/10 dark:text-cyan-400 dark:border-cyan-500/20';
+  }
+
+  // Orange: Costing
+  if (s === 'cost estimation') {
+      return 'bg-orange-50 text-orange-700 border border-orange-200 dark:bg-orange-500/10 dark:text-orange-400 dark:border-orange-500/20';
+  }
   
+  // Default Slate
   return 'bg-slate-100 text-slate-700 border border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700';
 };
 
@@ -79,25 +95,16 @@ const getStatusColor = (status: string) => {
 const getChartColor = (status: string, theme: 'light' | 'dark') => {
   const s = normalizeStatus(status);
   
-  if (s === 'passed' || s === 'engineer approval' || s === 'work design' || s === 'design approval') {
-    return '#10b981'; // emerald-500
-  }
-  if (s === 'suspended by edd') {
-    return '#ef4444'; // red-500
-  }
-  if (s === 'cancelled' || s === 'canceled') {
-    return theme === 'dark' ? '#475569' : '#94a3b8'; // slate-500/400
-  }
-  if (s.includes('gis')) {
-    return '#f59e0b'; // amber-500
-  }
-  if (s.includes('wayleave')) {
-    return '#f43f5e'; // rose-500
-  }
-  if (s === 'redesign') {
-    return '#a855f7'; // purple-500
-  }
-  // Else: Slate
+  if (['passed', 'engineer approval', 'work design', 'design approval'].includes(s)) return '#10b981'; // emerald
+  if (s === 'suspended by edd') return '#ef4444'; // red
+  if (s === 'cancelled') return theme === 'dark' ? '#475569' : '#94a3b8'; // slate
+  if (s.includes('gis')) return '#f59e0b'; // amber
+  if (s.includes('wayleave')) return '#f43f5e'; // rose
+  if (s === 'redesign') return '#a855f7'; // purple
+  if (['assign planning', 'site visit'].includes(s)) return '#3b82f6'; // blue
+  if (['design', 'attach utilities drawing'].includes(s)) return '#06b6d4'; // cyan
+  if (s === 'cost estimation') return '#f97316'; // orange
+
   return theme === 'dark' ? '#94a3b8' : '#475569';
 };
 
@@ -161,7 +168,7 @@ const EditRecordModal: React.FC<{
   const handleSave = async () => {
     if (!record) return;
 
-    const needsJustification = formData.status === 'Suspended by EDD' || formData.status === 'Cancelled';
+    const needsJustification = formData.status === 'Suspended by EDD';
 
     if (needsJustification && !formData.justification?.trim()) {
       setError(`Justification is required when status is "${formData.status}".`);
@@ -272,9 +279,9 @@ const EditRecordModal: React.FC<{
             </div>
 
             {/* Conditional Justification */}
-            {(formData.status === 'Suspended by EDD' || formData.status === 'Cancelled') && (
-              <div className={`md:col-span-2 animate-fade-in-down p-4 rounded-xl border ${formData.status === 'Cancelled' ? 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700' : 'bg-red-50 dark:bg-red-900/10 border-red-100 dark:border-red-900/50'}`}>
-                <label className={`block text-xs font-bold uppercase tracking-wider mb-2 flex items-center gap-2 ${formData.status === 'Cancelled' ? 'text-slate-600 dark:text-slate-400' : 'text-red-600 dark:text-red-400'}`}>
+            {(formData.status === 'Suspended by EDD') && (
+              <div className="md:col-span-2 animate-fade-in-down p-4 rounded-xl border bg-red-50 dark:bg-red-900/10 border-red-100 dark:border-red-900/50">
+                <label className="block text-xs font-bold uppercase tracking-wider mb-2 flex items-center gap-2 text-red-600 dark:text-red-400">
                   <Icons.Alert className="w-4 h-4" /> Justification Required
                 </label>
                 <textarea 
@@ -282,7 +289,7 @@ const EditRecordModal: React.FC<{
                   onChange={(e) => handleChange('justification', e.target.value)}
                   placeholder="Please provide the reason..."
                   rows={3}
-                  className={`w-full px-4 py-2.5 rounded-xl bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none transition-all resize-none border ${formData.status === 'Cancelled' ? 'border-slate-200 dark:border-slate-700 focus:border-slate-500 focus:ring-4 focus:ring-slate-500/10' : 'border-red-200 dark:border-red-900/50 focus:border-red-500 focus:ring-4 focus:ring-red-500/10'}`}
+                  className="w-full px-4 py-2.5 rounded-xl bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none transition-all resize-none border border-red-200 dark:border-red-900/50 focus:border-red-500 focus:ring-4 focus:ring-red-500/10"
                 />
               </div>
             )}

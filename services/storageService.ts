@@ -74,12 +74,15 @@ export const seedInitialData = async (): Promise<RecordItem[]> => {
     "Assign planning",
     "Site Visit",
     "Design",
-    "Design Approval",
+    "Design approval",
     "GIS digitalization",
     "Wayleave",
     "Cost estimation",
     "Attach Utilities Drawing",
-    "Engineer approval"
+    "Engineer approval",
+    "Redesign",
+    "Suspended by EDD",
+    "Work Design"
   ];
 
   // Generate mock data matching the new specific schema
@@ -101,6 +104,7 @@ export const seedInitialData = async (): Promise<RecordItem[]> => {
       referenceNumber: `REF-${1000 + i}`,
       requireUSP: requireUSP,
       sentToUSPDate: requireUSP && i % 2 === 0 ? new Date(Date.now() - (i * 48 * 60 * 60 * 1000)).toISOString() : undefined,
+      justification: status === 'Suspended by EDD' ? 'Pending clarification on zoning laws.' : undefined,
       createdAt: new Date().toISOString()
     };
   });
