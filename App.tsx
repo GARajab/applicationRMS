@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Icons } from './components/Icons';
 import * as XLSX from 'xlsx';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend } from 'recharts';
-import { RecordItem, User, AuthState, Notification, NotificationType, SortConfig } from './types';
+import { RecordItem, User, AuthState, Notification as AppNotification, NotificationType, SortConfig } from './types';
 import { getRecords, addRecord, deleteRecord, updateRecord, seedInitialData } from './services/storageService';
 import { supabase } from './services/supabaseClient';
 
@@ -317,9 +317,9 @@ const Login: React.FC<{ onLogin: (user: User) => void }> = ({ onLogin }) => {
 
 // 3. Notification Component
 interface NotificationProps {
-  notification: Notification;
+  notification: AppNotification;
   onClose: (id: string) => void;
-  onClick?: (notification: Notification) => void;
+  onClick?: (notification: AppNotification) => void;
 }
 
 const NotificationToast: React.FC<NotificationProps> = ({ notification, onClose, onClick }) => {
@@ -484,7 +484,7 @@ const App: React.FC = () => {
   const [isAuthChecking, setIsAuthChecking] = useState(true); // New state for initial load
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<SortConfig>({ key: 'createdAt', direction: 'desc' });
-  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [showUpload, setShowUpload] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [filterMode, setFilterMode] = useState<'all' | 'delayed'>('all');
@@ -585,8 +585,8 @@ const App: React.FC = () => {
     }
   };
 
-  const addNotification = (notif: Omit<Notification, 'id' | 'timestamp' | 'read'>) => {
-    const newNotif: Notification = {
+  const addNotification = (notif: Omit<AppNotification, 'id' | 'timestamp' | 'read'>) => {
+    const newNotif: AppNotification = {
       ...notif,
       id: Math.random().toString(36).substr(2, 9),
       timestamp: Date.now(),
@@ -608,7 +608,7 @@ const App: React.FC = () => {
     }
   };
 
-  const handleNotificationClick = (notification: Notification) => {
+  const handleNotificationClick = (notification: AppNotification) => {
     if (notification.type === NotificationType.WARNING) {
       setFilterMode('delayed');
       setNotifications(prev => prev.filter(n => n.id !== notification.id));
