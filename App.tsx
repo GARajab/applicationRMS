@@ -516,16 +516,7 @@ const ExcelUploader: React.FC<{ onUpload: (data: any[]) => void }> = ({ onUpload
           const jsonData = XLSX.utils.sheet_to_json(sheet);
           
           const mappedData = jsonData
-            .filter((row: any) => {
-              const status = String(row['Status'] || '').trim();
-              const excluded = [
-                'Pending payment',
-                'Chief approval',
-                'Head engineer approval'
-              ];
-              // Case insensitive check for exclusion
-              return !excluded.some(ex => ex.toLowerCase() === status.toLowerCase());
-            })
+            // NO FILTER - IMPORT EVERYTHING
             .map((row: any, index) => {
               const requireUSPRaw = String(row['Require USP'] || row['require_usp'] || '').toLowerCase();
               const requireUSP = requireUSPRaw === 'yes' || requireUSPRaw === 'true';
@@ -534,7 +525,15 @@ const ExcelUploader: React.FC<{ onUpload: (data: any[]) => void }> = ({ onUpload
               const wayleave = String(row['Wayleave number'] || '').trim();
               const account = String(row['Account number'] || '').trim();
               const ref = String(row['Reference Number'] || '').trim();
-              const status = String(row['Status'] || 'Assign planning').trim();
+              
+              // Status Logic
+              let status = String(row['Status'] || 'Assign planning').trim();
+              
+              // Try to map to canonical status to ensure consistency if it matches one of the 12 known statuses
+              const canonicalStatus = STATUS_SEQUENCE.find(s => s.toLowerCase() === status.toLowerCase());
+              if (canonicalStatus) {
+                status = canonicalStatus;
+              }
 
               return {
                 label: row['Label'] || row['Title'] || `Imported ${index + 1}`,
