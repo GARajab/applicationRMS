@@ -1076,7 +1076,7 @@ const App: React.FC = () => {
                           </div>
                         </td>
                       </tr>
-                    ))}
+                    )}
                   </tbody>
                 </table>
               )}
