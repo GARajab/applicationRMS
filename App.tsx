@@ -3,7 +3,7 @@ import { Icons } from './components/Icons';
 import * as XLSX from 'xlsx';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend } from 'recharts';
 import { RecordItem, User, AuthState, Notification as AppNotification, NotificationType, SortConfig } from './types';
-import { getRecords, addRecord, deleteRecord, updateRecord, seedInitialData } from './services/storageService';
+import { getRecords, addRecord, deleteRecord, updateRecord } from './services/storageService';
 import { supabase } from './services/supabaseClient';
 
 // --- Constants ---
@@ -679,14 +679,8 @@ const App: React.FC = () => {
   const refreshRecords = async () => {
     setIsLoading(true);
     const data = await getRecords();
-    if (data.length === 0) {
-      const seeded = await seedInitialData();
-      setRecords(seeded);
-      checkAgingRecords(seeded);
-    } else {
-      setRecords(data);
-      checkAgingRecords(data);
-    }
+    setRecords(data);
+    checkAgingRecords(data);
     setIsLoading(false);
   };
 
