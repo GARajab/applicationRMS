@@ -40,26 +40,18 @@ const parseExcelDate = (value: any): string | undefined => {
 const getStatusColor = (status: string) => {
   const s = status?.trim().toLowerCase() || '';
   
-  // 1. GREEN: Passed / Engineer Approval
-  // Modern aesthetic: Subtle emerald background, strong text, delicate border
   if (s === 'passed' || s === 'engineer approval') {
     return 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20';
   }
   
-  // 2. YELLOW: GIS
-  // Modern aesthetic: Subtle amber background
   if (s.includes('gis')) {
     return 'bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20';
   }
   
-  // 3. RED: Wayleave
-  // Modern aesthetic: Subtle rose background
   if (s.includes('wayleave')) {
     return 'bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/20';
   }
   
-  // 4. ELSE: Black/White (Monochrome)
-  // Modern aesthetic: Clean Slate/Zinc look. High contrast but not harsh.
   return 'bg-slate-100 text-slate-700 border border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700';
 };
 
@@ -779,7 +771,7 @@ const App: React.FC = () => {
     return STATUS_SEQUENCE.map(step => ({
       name: step,
       value: counts[step] || 0
-    })).filter(item => item.value > 0); // Optional: filter out 0s if chart is too crowded
+    })).filter(item => item.value > 0);
   }, [records]);
 
   const zoneData = useMemo(() => {
@@ -1093,7 +1085,7 @@ const App: React.FC = () => {
 
           {/* Analytics Section */}
           <div className="space-y-6">
-            <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm h-80 flex flex-col animate-fade-in-up" style={{animationDelay: '0.1s'}}>
+            <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm h-80 flex flex-col animate-fade-in-up">
               <div className="flex justify-between items-center mb-6">
                  <h3 className="font-bold text-slate-900 dark:text-white">Status Distribution</h3>
                  <div className="bg-emerald-50 dark:bg-emerald-900/20 p-1.5 rounded-lg">
@@ -1127,7 +1119,7 @@ const App: React.FC = () => {
             </div>
 
             {/* Zone Chart */}
-            <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm h-80 flex flex-col animate-fade-in-up" style={{animationDelay: '0.2s'}}>
+            <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm h-80 flex flex-col animate-fade-in-up">
                <div className="flex justify-between items-center mb-2">
                  <h3 className="font-bold text-slate-900 dark:text-white">Zone Activity</h3>
                  <div className="bg-indigo-50 dark:bg-indigo-900/20 p-1.5 rounded-lg">
