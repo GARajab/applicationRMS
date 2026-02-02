@@ -496,6 +496,7 @@ const App: React.FC = () => {
   const [showUpload, setShowUpload] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [filterMode, setFilterMode] = useState<'all' | 'delayed'>('all');
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
   
   // Theme State
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
@@ -507,12 +508,28 @@ const App: React.FC = () => {
 
   const [editingRecord, setEditingRecord] = useState<RecordItem | null>(null);
 
-  // Initialize Browser Notifications on mount
+  // Initialize Browser Notifications on mount (check status, don't request yet)
   useEffect(() => {
-    if ("Notification" in window && Notification.permission === "default") {
-      Notification.requestPermission();
+    if ("Notification" in window) {
+      setNotificationPermission(Notification.permission);
     }
   }, []);
+
+  const requestNotificationPermission = async () => {
+    if (!("Notification" in window)) return;
+    try {
+      const permission = await Notification.requestPermission();
+      setNotificationPermission(permission);
+      if (permission === 'granted') {
+        new window.Notification("Nexus Record Manager", {
+          body: "Notifications enabled successfully!",
+          silent: true
+        });
+      }
+    } catch (error) {
+      console.error("Error requesting notification permission:", error);
+    }
+  };
 
   // Apply Theme
   useEffect(() => {
@@ -590,8 +607,7 @@ const App: React.FC = () => {
       try {
         new window.Notification("Nexus Record Manager", {
           body: notif.message,
-          // Optional: Add an icon if available in your public folder
-          // icon: '/vite.svg', 
+          // icon: '/vite.svg', // Ensure this exists or remove
           silent: false,
         });
       } catch (e) {
@@ -896,8 +912,19 @@ const App: React.FC = () => {
                 onChange={(e) => setSearch(e.target.value)}
               />
             </div>
-            <button className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800 relative transition-all shadow-sm">
+            
+            <button 
+              onClick={notificationPermission === 'granted' ? () => {} : requestNotificationPermission}
+              className={`p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800 relative transition-all shadow-sm group ${notificationPermission !== 'granted' ? 'animate-pulse' : 'text-slate-500 dark:text-slate-400'}`}
+              title={notificationPermission === 'granted' ? 'Notifications Enabled' : 'Enable Notifications'}
+            >
               <Icons.Bell className="w-5 h-5" />
+              {notificationPermission !== 'granted' && notificationPermission !== 'denied' && (
+                <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                </span>
+              )}
               {notifications.length > 0 && (
                 <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-rose-500 rounded-full animate-pulse ring-2 ring-white dark:ring-slate-900"></span>
               )}
