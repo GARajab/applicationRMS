@@ -776,15 +776,16 @@ const App: React.FC = () => {
     };
 
     for (const newRecord of newRecords) {
-      // Improved matching: Case insensitive, trim
+      // STRICT MATCHING: Reverted case-insensitive logic as requested.
       const existingRecord = currentRecords.find(existing => {
-        const existingRef = existing.referenceNumber?.trim().toLowerCase();
-        const newRef = newRecord.referenceNumber?.trim().toLowerCase();
-        const isRefMatch = existingRef && newRef && existingRef === newRef;
+        const isRefMatch = existing.referenceNumber && 
+                           newRecord.referenceNumber && 
+                           existing.referenceNumber === newRecord.referenceNumber;
         
-        const existingWayleave = existing.wayleaveNumber?.trim().toLowerCase();
-        const newWayleave = newRecord.wayleaveNumber?.trim().toLowerCase();
-        const isWayleaveMatch = existingWayleave && newWayleave && newWayleave !== '' && existingWayleave === newWayleave;
+        const isWayleaveMatch = existing.wayleaveNumber && 
+                               newRecord.wayleaveNumber && 
+                               newRecord.wayleaveNumber !== '' && 
+                               existing.wayleaveNumber === newRecord.wayleaveNumber;
         
         return isRefMatch || isWayleaveMatch;
       });
