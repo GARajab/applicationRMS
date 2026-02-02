@@ -7,18 +7,21 @@ import { getRecords, addRecord, deleteRecord, updateRecord, seedInitialData } fr
 import { supabase } from './services/supabaseClient';
 
 // --- Constants ---
+// Priority Order: 1 (Lowest Index) to 12 (Highest Index)
 const STATUS_SEQUENCE = [
-  "Assign planning",
-  "Site Visit",
-  "Design",
-  "Design Approval",
-  "GIS digitalization",
-  "Wayleave",
-  "Cost estimation",
-  "Attach Utilities Drawing",
-  "Engineer approval",
-  "Suspended by EDD",
-  "Cancelled"
+  "Assign planning",          // 1
+  "Site Visit",               // 2
+  "Design",                   // 3
+  "Design approval",          // 4 (Note: Case sensitive in logic, we'll normalize)
+  "GIS digitalization",       // 5
+  "Wayleave",                 // 6
+  "Cost estimation",          // 7
+  "Attach Utilities Drawing", // 8
+  "Engineer approval",        // 9
+  "Redesign",                 // 10
+  "Suspended by EDD",         // 11
+  "Work Design",              // 12
+  "Cancelled"                 // Optional: Terminal state
 ];
 
 // --- Helper Functions ---
@@ -38,11 +41,14 @@ const parseExcelDate = (value: any): string | undefined => {
   return !isNaN(d.getTime()) ? d.toISOString() : undefined;
 };
 
+// Normalize status string for comparison
+const normalizeStatus = (s: string) => s.trim().toLowerCase();
+
 // Modern Color Mapping
 const getStatusColor = (status: string) => {
-  const s = status?.trim().toLowerCase() || '';
+  const s = normalizeStatus(status);
   
-  if (s === 'passed' || s === 'engineer approval') {
+  if (s === 'passed' || s === 'engineer approval' || s === 'work design') {
     return 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20';
   }
   
@@ -61,15 +67,19 @@ const getStatusColor = (status: string) => {
   if (s.includes('wayleave')) {
     return 'bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/20';
   }
+
+  if (s === 'redesign') {
+    return 'bg-purple-50 text-purple-700 border border-purple-200 dark:bg-purple-500/10 dark:text-purple-400 dark:border-purple-500/20';
+  }
   
   return 'bg-slate-100 text-slate-700 border border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700';
 };
 
 // Chart Color Mapping
 const getChartColor = (status: string, theme: 'light' | 'dark') => {
-  const s = status?.trim().toLowerCase() || '';
+  const s = normalizeStatus(status);
   
-  if (s === 'passed' || s === 'engineer approval') {
+  if (s === 'passed' || s === 'engineer approval' || s === 'work design') {
     return '#10b981'; // emerald-500
   }
   if (s === 'suspended by edd') {
@@ -83,6 +93,9 @@ const getChartColor = (status: string, theme: 'light' | 'dark') => {
   }
   if (s.includes('wayleave')) {
     return '#f43f5e'; // rose-500
+  }
+  if (s === 'redesign') {
+    return '#a855f7'; // purple-500
   }
   // Else: Slate
   return theme === 'dark' ? '#94a3b8' : '#475569';
@@ -500,8 +513,6 @@ const ExcelUploader: React.FC<{ onUpload: (data: any[]) => void }> = ({ onUpload
               const status = String(row['Status'] || '').trim();
               const excluded = [
                 'Pending payment',
-                // 'Cancelled', // Removed as requested
-                // 'Canceled', // Removed as requested
                 'Chief approval',
                 'Head engineer approval'
               ];
@@ -758,6 +769,12 @@ const App: React.FC = () => {
     let updatedCount = 0;
     let ignoredCount = 0;
 
+    // Helper to find index in sequence (case-insensitive)
+    const getStatusIndex = (status: string) => {
+      const idx = STATUS_SEQUENCE.findIndex(s => s.toLowerCase() === status.toLowerCase());
+      return idx === -1 ? -1 : idx;
+    };
+
     for (const newRecord of newRecords) {
       // Logic for detecting existing records:
       // 1. Matches an existing Reference Number
@@ -776,12 +793,14 @@ const App: React.FC = () => {
       });
 
       if (existingRecord) {
-        // Logic: Only update status if new status is "higher" in sequence than old status
-        const oldStatusIndex = STATUS_SEQUENCE.indexOf(existingRecord.status);
-        const newStatusIndex = STATUS_SEQUENCE.indexOf(newRecord.status);
+        // PRIORITY LOGIC:
+        // Only update if NEW status is HIGHER priority (greater index) than OLD status.
+        // If New Index <= Old Index, we ignore (don't downgrade or stay same via upload).
+        const oldIndex = getStatusIndex(existingRecord.status);
+        const newIndex = getStatusIndex(newRecord.status);
 
-        if (newStatusIndex > -1 && newStatusIndex > oldStatusIndex) {
-          // Update status
+        if (newIndex > -1 && newIndex > oldIndex) {
+          // Update status because new status is further along the pipeline
           await updateRecord(existingRecord.id, { status: newRecord.status });
           updatedCount++;
         } else {
@@ -879,11 +898,15 @@ const App: React.FC = () => {
     STATUS_SEQUENCE.forEach(s => counts[s] = 0);
     
     records.forEach(r => {
-      if (counts[r.status] !== undefined) {
-        counts[r.status]++;
+      // Find the matching status key case-insensitively
+      const matchingKey = STATUS_SEQUENCE.find(s => s.toLowerCase() === r.status.toLowerCase());
+      if (matchingKey) {
+        counts[matchingKey]++;
       } else {
-        // Handle unknown statuses safely
-        counts[r.status] = 1;
+        // If unknown status, just track it under its own name if desired, or ignore.
+        // For safety, we can add it to counts dynamicallly
+        if (!counts[r.status]) counts[r.status] = 0;
+        counts[r.status]++;
       }
     });
     return counts;
@@ -915,7 +938,7 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex font-sans overflow-x-hidden transition-colors duration-300 selection:bg-emerald-500/30 selection:text-emerald-900 dark:selection:text-emerald-200">
+    <div className="h-screen bg-slate-50 dark:bg-slate-950 flex font-sans overflow-hidden transition-colors duration-300 selection:bg-emerald-500/30 selection:text-emerald-900 dark:selection:text-emerald-200">
       
       {/* Mobile Sidebar Overlay */}
       {isMobileMenuOpen && (
@@ -930,14 +953,14 @@ const App: React.FC = () => {
         fixed inset-y-0 left-0 z-50 bg-white dark:bg-slate-900 
         border-r border-slate-100 dark:border-slate-800
         transition-all duration-300 ease-in-out
-        flex flex-col overflow-hidden
+        flex flex-col overflow-hidden h-full
         ${isMobileMenuOpen ? 'translate-x-0 w-72 shadow-2xl' : '-translate-x-full w-72'}
-        lg:translate-x-0
+        lg:relative lg:translate-x-0
         ${isSidebarCollapsed ? 'lg:w-0 lg:border-none' : 'lg:w-72 lg:border-r'}
       `}>
         {/* Inner Content Wrapper with fixed width to prevent squashing */}
         <div className="w-72 flex flex-col h-full">
-          <div className="p-8 flex items-center gap-4 text-slate-900 dark:text-white">
+          <div className="p-8 flex items-center gap-4 text-slate-900 dark:text-white shrink-0">
             <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-500/30 shrink-0">
               <Icons.Dashboard className="w-5 h-5 text-white" />
             </div>
@@ -950,7 +973,7 @@ const App: React.FC = () => {
             </button>
           </div>
 
-          <nav className="flex-1 px-6 space-y-2 py-4 overflow-hidden">
+          <nav className="flex-1 px-6 space-y-2 py-4 overflow-y-auto">
             <p className="px-4 text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-4 whitespace-nowrap">Main Menu</p>
             <button 
               onClick={() => { setStatusFilter('Total'); setShowUpload(false); }}
@@ -968,7 +991,7 @@ const App: React.FC = () => {
             </button>
           </nav>
 
-          <div className="p-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 overflow-hidden">
+          <div className="p-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 shrink-0">
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 rounded-full bg-white dark:bg-slate-800 flex items-center justify-center border border-slate-200 dark:border-slate-700 shadow-sm shrink-0">
                 <Icons.User className="w-5 h-5 text-slate-400 dark:text-slate-500" />
@@ -985,366 +1008,372 @@ const App: React.FC = () => {
         </div>
       </aside>
 
-      {/* Main Content (Dynamically adjusted margin) */}
-      <main className={`flex-1 p-4 md:p-8 lg:p-10 w-full transition-all duration-300 ease-in-out ${isSidebarCollapsed ? 'lg:ml-0' : 'lg:ml-72'}`}>
+      {/* Main Content Area (Flex Column) */}
+      <main className="flex-1 flex flex-col h-full overflow-hidden w-full relative">
         
-        {/* Header */}
-        <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-6">
-          <div className="flex items-center gap-4 w-full md:w-auto">
-             {/* Mobile Sidebar Toggle */}
-            <button 
-              onClick={() => setIsMobileMenuOpen(true)}
-              className="lg:hidden p-2.5 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl"
-            >
-              <Icons.Menu className="w-6 h-6" />
-            </button>
-            
-            {/* Desktop Sidebar Toggle */}
-            <button
-               onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-               className="hidden lg:flex p-2.5 text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
-               title={isSidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
-            >
-               {isSidebarCollapsed ? <Icons.Right className="w-5 h-5" /> : <Icons.Menu className="w-5 h-5" />}
-            </button>
+        {/* Scrollable Content Container */}
+        <div className="flex-1 overflow-y-auto p-4 md:p-8 lg:p-10 flex flex-col">
+          
+          {/* Header */}
+          <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-6 shrink-0">
+            <div className="flex items-center gap-4 w-full md:w-auto">
+              {/* Mobile Sidebar Toggle */}
+              <button 
+                onClick={() => setIsMobileMenuOpen(true)}
+                className="lg:hidden p-2.5 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl"
+              >
+                <Icons.Menu className="w-6 h-6" />
+              </button>
+              
+              {/* Desktop Sidebar Toggle */}
+              <button
+                onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+                className="hidden lg:flex p-2.5 text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
+                title={isSidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+              >
+                {isSidebarCollapsed ? <Icons.Right className="w-5 h-5" /> : <Icons.Menu className="w-5 h-5" />}
+              </button>
 
-            <div>
-              <h1 className="text-3xl font-bold text-slate-900 dark:text-white animate-fade-in tracking-tight">
-                Dashboard
-              </h1>
-              <p className="text-slate-500 dark:text-slate-400 mt-1 animate-fade-in-up font-medium">
-                Overview of your planning operations
-              </p>
+              <div>
+                <h1 className="text-3xl font-bold text-slate-900 dark:text-white animate-fade-in tracking-tight">
+                  Dashboard
+                </h1>
+                <p className="text-slate-500 dark:text-slate-400 mt-1 animate-fade-in-up font-medium">
+                  Overview of your planning operations
+                </p>
+              </div>
             </div>
-          </div>
 
-          <div className="flex items-center gap-3 w-full md:w-auto">
-            <button 
-              onClick={toggleTheme}
-              className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-500 dark:text-yellow-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors shadow-sm"
-              title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-            >
-              {theme === 'dark' ? <Icons.Sun className="w-5 h-5" /> : <Icons.Moon className="w-5 h-5" />}
-            </button>
+            <div className="flex items-center gap-3 w-full md:w-auto">
+              <button 
+                onClick={toggleTheme}
+                className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-500 dark:text-yellow-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors shadow-sm"
+                title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+              >
+                {theme === 'dark' ? <Icons.Sun className="w-5 h-5" /> : <Icons.Moon className="w-5 h-5" />}
+              </button>
 
-            <div className="relative flex-1 md:flex-none group">
-              <Icons.Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4 group-focus-within:text-emerald-500 transition-colors" />
-              <input 
-                type="text" 
-                placeholder="Search..." 
-                className="pl-11 pr-4 py-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none w-full md:w-72 transition-all shadow-sm font-medium"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </div>
-            
-            <button 
-              onClick={notificationPermission === 'granted' ? () => {} : requestNotificationPermission}
-              className={`p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800 relative transition-all shadow-sm group ${notificationPermission !== 'granted' ? 'animate-pulse' : 'text-slate-500 dark:text-slate-400'}`}
-              title={notificationPermission === 'granted' ? 'Notifications Enabled' : 'Enable Notifications'}
-            >
-              <Icons.Bell className="w-5 h-5" />
-              {notificationPermission !== 'granted' && notificationPermission !== 'denied' && (
-                <span className="absolute -top-1 -right-1 flex h-3 w-3">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
-                </span>
-              )}
-              {notifications.length > 0 && (
-                <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-rose-500 rounded-full animate-pulse ring-2 ring-white dark:ring-slate-900"></span>
-              )}
-            </button>
-          </div>
-        </header>
-
-        {/* Status Filter Tabs (Wrapped, No Scroll) */}
-        <div className="mb-8">
-          <div className="flex flex-wrap gap-3">
-            {STATUS_SEQUENCE.map((status) => {
-              const count = statusCounts[status] || 0;
-              const isActive = statusFilter === status;
-              return (
-                <button
-                  key={status}
-                  onClick={() => setStatusFilter(status)}
-                  className={`
-                    flex items-center gap-3 px-5 py-3 rounded-xl border transition-all duration-200 group relative overflow-hidden
-                    ${isActive 
-                      ? 'bg-slate-900 dark:bg-emerald-600 border-slate-900 dark:border-emerald-500 text-white shadow-lg shadow-slate-900/20 dark:shadow-emerald-900/30 transform -translate-y-0.5' 
-                      : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:border-emerald-500/50 hover:shadow-md'
-                    }
-                  `}
-                >
-                  <span className={`text-sm font-bold whitespace-nowrap ${isActive ? 'text-white' : 'group-hover:text-slate-900 dark:group-hover:text-white'}`}>
-                    {status}
+              <div className="relative flex-1 md:flex-none group">
+                <Icons.Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4 group-focus-within:text-emerald-500 transition-colors" />
+                <input 
+                  type="text" 
+                  placeholder="Search..." 
+                  className="pl-11 pr-4 py-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none w-full md:w-72 transition-all shadow-sm font-medium"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
+              
+              <button 
+                onClick={notificationPermission === 'granted' ? () => {} : requestNotificationPermission}
+                className={`p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800 relative transition-all shadow-sm group ${notificationPermission !== 'granted' ? 'animate-pulse' : 'text-slate-500 dark:text-slate-400'}`}
+                title={notificationPermission === 'granted' ? 'Notifications Enabled' : 'Enable Notifications'}
+              >
+                <Icons.Bell className="w-5 h-5" />
+                {notificationPermission !== 'granted' && notificationPermission !== 'denied' && (
+                  <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
                   </span>
-                  <span className={`
-                    text-xs font-bold px-2 py-0.5 rounded-md min-w-[24px] text-center
-                    ${isActive 
-                      ? 'bg-white/20 text-white' 
-                      : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
-                    }
-                  `}>
-                    {count}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Upload Area (Conditional) */}
-        {showUpload && (
-          <div className="mb-10 animate-fade-in-down">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="font-bold text-lg text-slate-800 dark:text-white">Import Records</h3>
-              <button onClick={() => setShowUpload(false)} className="text-slate-400 hover:text-slate-900 dark:hover:text-white transition-transform hover:rotate-90 p-2">
-                <Icons.Close className="w-5 h-5" />
+                )}
+                {notifications.length > 0 && (
+                  <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-rose-500 rounded-full animate-pulse ring-2 ring-white dark:ring-slate-900"></span>
+                )}
               </button>
             </div>
-            <ExcelUploader onUpload={handleExcelUpload} />
-          </div>
-        )}
+          </header>
 
-        {/* Content Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          
-          {/* List Section (Expanded Width) */}
-          <div className="lg:col-span-2 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col overflow-hidden h-[calc(100vh-16rem)] min-h-[500px] animate-fade-in-up">
-            <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-white dark:bg-slate-900 sticky top-0 z-10">
-              <h2 className="font-bold text-lg text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
-                {statusFilter === 'Total' ? 'All Records' : statusFilter}
-                <span className="text-slate-400 text-sm font-normal">({filteredRecords.length})</span>
-              </h2>
-              <div className="flex gap-2">
-                 <select 
-                    className="text-xs font-medium border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg px-3 py-1.5 outline-none focus:ring-2 focus:ring-emerald-500/20"
-                    onChange={(e) => setSort({ key: e.target.value as keyof RecordItem, direction: 'desc' })}
-                 >
-                   <option value="createdAt">Newest First</option>
-                   <option value="scheduleStartDate">Schedule Date</option>
-                   <option value="status">Status</option>
-                   <option value="zone">Zone</option>
-                 </select>
-              </div>
-            </div>
-            <div className="overflow-x-auto overflow-y-auto flex-1 custom-scrollbar">
-              {isLoading ? (
-                <div className="h-full flex flex-col items-center justify-center text-slate-400 gap-4">
-                  <Icons.Spinner className="animate-spin w-8 h-8 text-emerald-500" /> 
-                  <span className="animate-pulse font-medium">Loading records...</span>
-                </div>
-              ) : (
-                <table className="w-full text-left border-collapse">
-                  <thead className="bg-slate-50/80 dark:bg-slate-950/50 text-slate-500 dark:text-slate-400 text-xs uppercase font-bold tracking-wider sticky top-0 backdrop-blur-sm z-10">
-                    <tr>
-                      <th className="px-6 py-4 w-16">#</th>
-                      <th className="px-6 py-4">Reference</th>
-                      <th className="px-6 py-4">Details</th>
-                      <th className="px-6 py-4">Status</th>
-                      <th className="px-6 py-4">USP</th>
-                      <th className="px-6 py-4">Scheduled</th>
-                      <th className="px-6 py-4">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-50 dark:divide-slate-800/50">
-                    {filteredRecords.map((record, index) => (
-                      <tr key={record.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group">
-                        <td className="px-6 py-4 text-xs font-medium text-slate-400 dark:text-slate-600">
-                          {index + 1}
-                        </td>
-                        <td className="px-6 py-4">
-                          <span className="font-mono text-xs text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-md whitespace-nowrap">
-                            {record.referenceNumber}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="font-semibold text-slate-900 dark:text-white text-sm mb-0.5">{record.label}</div>
-                          <div className="flex items-center gap-2">
-                             <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wide">Zone: {record.zone}</span>
-                          </div>
-                          {record.justification && (
-                            <div className="mt-1 text-xs text-red-500 font-medium italic">
-                              Note: {record.justification}
-                            </div>
-                          )}
-                        </td>
-                        <td className="px-6 py-4">
-                          <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold capitalize shadow-sm tracking-wide ${getStatusColor(record.status)}`}>
-                            {record.status === 'Suspended by EDD' && <span className="mr-1.5 relative flex h-2 w-2">
-                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                              <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
-                            </span>}
-                            {record.status}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4">
-                           {record.requireUSP ? (
-                             <div className="flex flex-col gap-1.5">
-                               <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Required</span>
-                               {record.sentToUSPDate ? (
-                                 <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1 whitespace-nowrap">
-                                   <Icons.Check className="w-3 h-3" /> Sent
-                                 </span>
-                               ) : (
-                                 <span className="text-xs text-amber-600 dark:text-amber-500 font-medium flex items-center gap-1 whitespace-nowrap animate-pulse">
-                                   <Icons.Clock className="w-3 h-3" /> Pending
-                                 </span>
-                               )}
-                             </div>
-                           ) : (
-                             <span className="text-slate-300 dark:text-slate-600 text-lg">&bull;</span>
-                           )}
-                        </td>
-                        <td className="px-6 py-4 text-slate-600 dark:text-slate-400 text-sm font-medium whitespace-nowrap">
-                          {new Date(record.scheduleStartDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                             <button 
-                              onClick={() => setEditingRecord(record)}
-                              className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 rounded-lg transition-colors"
-                              title="Edit Record"
-                            >
-                              <Icons.Edit className="w-4 h-4" />
-                            </button>
-                            <button 
-                              onClick={() => handleDelete(record.id)}
-                              className="p-2 hover:bg-rose-50 dark:hover:bg-rose-900/20 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 rounded-lg transition-colors"
-                              title="Delete Record"
-                            >
-                              <Icons.Trash className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                    {filteredRecords.length === 0 && (
-                      <tr>
-                        <td colSpan={7} className="px-6 py-20 text-center">
-                          <div className="flex flex-col items-center justify-center">
-                            <div className="w-16 h-16 bg-slate-50 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4">
-                              <Icons.Search className="w-8 h-8 text-slate-300 dark:text-slate-600" />
-                            </div>
-                            <p className="text-slate-500 dark:text-slate-400 font-medium">No records found matching your criteria.</p>
-                            <button onClick={() => { setSearch(''); setStatusFilter('Total'); }} className="mt-2 text-emerald-600 dark:text-emerald-400 text-sm font-bold hover:underline">
-                              Clear Filters
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          </div>
-
-          {/* Analytics Section (Right Column) */}
-          <div className="space-y-6">
-            
-            {/* Total Records Card (Moved here) */}
-             <div className="bg-gradient-to-br from-emerald-500 to-teal-600 p-6 rounded-3xl shadow-lg shadow-emerald-500/20 text-white flex flex-col animate-fade-in-up relative overflow-hidden group">
-               <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-2xl -mr-16 -mt-16 pointer-events-none"></div>
-               <div className="flex justify-between items-start mb-4 relative z-10">
-                 <div>
-                   <p className="text-emerald-100 font-medium text-sm uppercase tracking-wide">Total Projects</p>
-                   <h3 className="text-4xl font-bold mt-1">{statusCounts['Total']}</h3>
-                 </div>
-                 <div className="bg-white/20 p-2 rounded-xl">
-                   <Icons.Dashboard className="w-6 h-6 text-white" />
-                 </div>
-               </div>
-               <div className="relative z-10 mt-auto">
-                  <button 
-                    onClick={() => setStatusFilter('Total')}
-                    className="text-xs font-bold bg-white/20 hover:bg-white/30 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 w-fit"
+          {/* Status Filter Tabs (Wrapped, No Scroll) */}
+          <div className="mb-8 shrink-0">
+            <div className="flex flex-wrap gap-3">
+              {STATUS_SEQUENCE.map((status) => {
+                const count = statusCounts[status] || 0;
+                const isActive = statusFilter === status;
+                return (
+                  <button
+                    key={status}
+                    onClick={() => setStatusFilter(status)}
+                    className={`
+                      flex items-center gap-3 px-5 py-3 rounded-xl border transition-all duration-200 group relative overflow-hidden
+                      ${isActive 
+                        ? 'bg-slate-900 dark:bg-emerald-600 border-slate-900 dark:border-emerald-500 text-white shadow-lg shadow-slate-900/20 dark:shadow-emerald-900/30 transform -translate-y-0.5' 
+                        : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:border-emerald-500/50 hover:shadow-md'
+                      }
+                    `}
                   >
-                    View All Records <Icons.Right className="w-3 h-3" />
+                    <span className={`text-sm font-bold whitespace-nowrap ${isActive ? 'text-white' : 'group-hover:text-slate-900 dark:group-hover:text-white'}`}>
+                      {status}
+                    </span>
+                    <span className={`
+                      text-xs font-bold px-2 py-0.5 rounded-md min-w-[24px] text-center
+                      ${isActive 
+                        ? 'bg-white/20 text-white' 
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
+                      }
+                    `}>
+                      {count}
+                    </span>
                   </button>
-               </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Upload Area (Conditional) */}
+          {showUpload && (
+            <div className="mb-10 animate-fade-in-down shrink-0">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="font-bold text-lg text-slate-800 dark:text-white">Import Records</h3>
+                <button onClick={() => setShowUpload(false)} className="text-slate-400 hover:text-slate-900 dark:hover:text-white transition-transform hover:rotate-90 p-2">
+                  <Icons.Close className="w-5 h-5" />
+                </button>
+              </div>
+              <ExcelUploader onUpload={handleExcelUpload} />
+            </div>
+          )}
+
+          {/* Content Grid - Flex-1 to take remaining height */}
+          <div className="flex flex-col lg:flex-row gap-8 flex-1 min-h-0">
+            
+            {/* List Section (Expanded Width) - Takes remaining height */}
+            <div className="lg:w-2/3 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col overflow-hidden animate-fade-in-up h-[600px] lg:h-auto lg:flex-1">
+              <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-white dark:bg-slate-900 shrink-0 z-10">
+                <h2 className="font-bold text-lg text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
+                  {statusFilter === 'Total' ? 'All Records' : statusFilter}
+                  <span className="text-slate-400 text-sm font-normal">({filteredRecords.length})</span>
+                </h2>
+                <div className="flex gap-2">
+                  <select 
+                      className="text-xs font-medium border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg px-3 py-1.5 outline-none focus:ring-2 focus:ring-emerald-500/20"
+                      onChange={(e) => setSort({ key: e.target.value as keyof RecordItem, direction: 'desc' })}
+                  >
+                    <option value="createdAt">Newest First</option>
+                    <option value="scheduleStartDate">Schedule Date</option>
+                    <option value="status">Status</option>
+                    <option value="zone">Zone</option>
+                  </select>
+                </div>
+              </div>
+              {/* Table Container - Flex-1 to scroll independently */}
+              <div className="overflow-auto flex-1 custom-scrollbar relative">
+                {isLoading ? (
+                  <div className="h-full flex flex-col items-center justify-center text-slate-400 gap-4">
+                    <Icons.Spinner className="animate-spin w-8 h-8 text-emerald-500" /> 
+                    <span className="animate-pulse font-medium">Loading records...</span>
+                  </div>
+                ) : (
+                  <table className="w-full text-left border-collapse">
+                    <thead className="bg-slate-50/80 dark:bg-slate-950/50 text-slate-500 dark:text-slate-400 text-xs uppercase font-bold tracking-wider sticky top-0 backdrop-blur-sm z-10 shadow-sm">
+                      <tr>
+                        <th className="px-6 py-4 w-16">#</th>
+                        <th className="px-6 py-4">Reference</th>
+                        <th className="px-6 py-4">Details</th>
+                        <th className="px-6 py-4">Status</th>
+                        <th className="px-6 py-4">USP</th>
+                        <th className="px-6 py-4">Scheduled</th>
+                        <th className="px-6 py-4">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50 dark:divide-slate-800/50">
+                      {filteredRecords.map((record, index) => (
+                        <tr key={record.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group">
+                          <td className="px-6 py-4 text-xs font-medium text-slate-400 dark:text-slate-600">
+                            {index + 1}
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className="font-mono text-xs text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-md whitespace-nowrap">
+                              {record.referenceNumber}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="font-semibold text-slate-900 dark:text-white text-sm mb-0.5">{record.label}</div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wide">Zone: {record.zone}</span>
+                            </div>
+                            {record.justification && (
+                              <div className="mt-1 text-xs text-red-500 font-medium italic">
+                                Note: {record.justification}
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold capitalize shadow-sm tracking-wide ${getStatusColor(record.status)}`}>
+                              {record.status === 'Suspended by EDD' && <span className="mr-1.5 relative flex h-2 w-2">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                              </span>}
+                              {record.status}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4">
+                            {record.requireUSP ? (
+                              <div className="flex flex-col gap-1.5">
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Required</span>
+                                {record.sentToUSPDate ? (
+                                  <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1 whitespace-nowrap">
+                                    <Icons.Check className="w-3 h-3" /> Sent
+                                  </span>
+                                ) : (
+                                  <span className="text-xs text-amber-600 dark:text-amber-500 font-medium flex items-center gap-1 whitespace-nowrap animate-pulse">
+                                    <Icons.Clock className="w-3 h-3" /> Pending
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-slate-300 dark:text-slate-600 text-lg">&bull;</span>
+                            )}
+                          </td>
+                          <td className="px-6 py-4 text-slate-600 dark:text-slate-400 text-sm font-medium whitespace-nowrap">
+                            {new Date(record.scheduleStartDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button 
+                                onClick={() => setEditingRecord(record)}
+                                className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 rounded-lg transition-colors"
+                                title="Edit Record"
+                              >
+                                <Icons.Edit className="w-4 h-4" />
+                              </button>
+                              <button 
+                                onClick={() => handleDelete(record.id)}
+                                className="p-2 hover:bg-rose-50 dark:hover:bg-rose-900/20 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 rounded-lg transition-colors"
+                                title="Delete Record"
+                              >
+                                <Icons.Trash className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                      {filteredRecords.length === 0 && (
+                        <tr>
+                          <td colSpan={7} className="px-6 py-20 text-center">
+                            <div className="flex flex-col items-center justify-center">
+                              <div className="w-16 h-16 bg-slate-50 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4">
+                                <Icons.Search className="w-8 h-8 text-slate-300 dark:text-slate-600" />
+                              </div>
+                              <p className="text-slate-500 dark:text-slate-400 font-medium">No records found matching your criteria.</p>
+                              <button onClick={() => { setSearch(''); setStatusFilter('Total'); }} className="mt-2 text-emerald-600 dark:text-emerald-400 text-sm font-bold hover:underline">
+                                Clear Filters
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                )}
+              </div>
             </div>
 
-            <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm h-80 flex flex-col animate-fade-in-up">
-              <div className="flex justify-between items-center mb-6">
-                 <h3 className="font-bold text-slate-900 dark:text-white">Status Distribution</h3>
-                 <div className="bg-emerald-50 dark:bg-emerald-900/20 p-1.5 rounded-lg">
-                   <Icons.Dashboard className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                 </div>
+            {/* Analytics Section (Right Column) - Fixed width, scrolls if main container overflows (unlikely with flex-1 on left but possible) or stays fixed */}
+            <div className="lg:w-1/3 flex flex-col gap-6 overflow-y-auto">
+              
+              {/* Total Records Card */}
+              <div className="bg-gradient-to-br from-emerald-500 to-teal-600 p-6 rounded-3xl shadow-lg shadow-emerald-500/20 text-white flex flex-col animate-fade-in-up relative overflow-hidden group shrink-0">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-2xl -mr-16 -mt-16 pointer-events-none"></div>
+                <div className="flex justify-between items-start mb-4 relative z-10">
+                  <div>
+                    <p className="text-emerald-100 font-medium text-sm uppercase tracking-wide">Total Projects</p>
+                    <h3 className="text-4xl font-bold mt-1">{statusCounts['Total']}</h3>
+                  </div>
+                  <div className="bg-white/20 p-2 rounded-xl">
+                    <Icons.Dashboard className="w-6 h-6 text-white" />
+                  </div>
+                </div>
+                <div className="relative z-10 mt-auto">
+                    <button 
+                      onClick={() => setStatusFilter('Total')}
+                      className="text-xs font-bold bg-white/20 hover:bg-white/30 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 w-fit"
+                    >
+                      View All Records <Icons.Right className="w-3 h-3" />
+                    </button>
+                </div>
               </div>
-              <div className="w-full h-64">
-                 <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={chartStatusData} margin={{ top: 10, right: 10, left: -20, bottom: 40 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={theme === 'dark' ? '#1e293b' : '#f1f5f9'} />
-                      <XAxis 
-                        dataKey="name" 
-                        axisLine={false} 
-                        tickLine={false} 
-                        tick={{fill: theme === 'dark' ? '#64748b' : '#94a3b8', fontSize: 10}} 
-                        angle={-45} 
-                        textAnchor="end"
-                        interval={0}
-                        height={60}
-                      />
-                      <YAxis axisLine={false} tickLine={false} tick={{fill: theme === 'dark' ? '#64748b' : '#94a3b8', fontSize: 12}} />
-                      <Tooltip 
-                        cursor={{fill: theme === 'dark' ? '#1e293b' : '#f8fafc', opacity: 0.4}}
-                        contentStyle={{
-                           borderRadius: '12px', 
-                           border: 'none', 
-                           backgroundColor: theme === 'dark' ? '#1e293b' : '#fff', 
-                           color: theme === 'dark' ? '#f8fafc' : '#1e293b',
-                           boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)'
-                        }}
-                      />
-                      <Bar dataKey="value" radius={[6, 6, 0, 0]}>
-                        {chartStatusData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={getChartColor(entry.name, theme)} />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                 </ResponsiveContainer>
-              </div>
-            </div>
 
-            {/* Zone Chart */}
-            <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm h-80 flex flex-col animate-fade-in-up">
-               <div className="flex justify-between items-center mb-2">
-                 <h3 className="font-bold text-slate-900 dark:text-white">Zone Activity</h3>
-                 <div className="bg-indigo-50 dark:bg-indigo-900/20 p-1.5 rounded-lg">
-                   <Icons.Filter className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                 </div>
+              {/* Status Chart */}
+              <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm h-80 flex flex-col animate-fade-in-up shrink-0">
+                <div className="flex justify-between items-center mb-6">
+                  <h3 className="font-bold text-slate-900 dark:text-white">Status Distribution</h3>
+                  <div className="bg-emerald-50 dark:bg-emerald-900/20 p-1.5 rounded-lg">
+                    <Icons.Dashboard className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                  </div>
+                </div>
+                <div className="w-full h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={chartStatusData} margin={{ top: 10, right: 10, left: -20, bottom: 40 }}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={theme === 'dark' ? '#1e293b' : '#f1f5f9'} />
+                        <XAxis 
+                          dataKey="name" 
+                          axisLine={false} 
+                          tickLine={false} 
+                          tick={{fill: theme === 'dark' ? '#64748b' : '#94a3b8', fontSize: 10}} 
+                          angle={-45} 
+                          textAnchor="end"
+                          interval={0}
+                          height={60}
+                        />
+                        <YAxis axisLine={false} tickLine={false} tick={{fill: theme === 'dark' ? '#64748b' : '#94a3b8', fontSize: 12}} />
+                        <Tooltip 
+                          cursor={{fill: theme === 'dark' ? '#1e293b' : '#f8fafc', opacity: 0.4}}
+                          contentStyle={{
+                            borderRadius: '12px', 
+                            border: 'none', 
+                            backgroundColor: theme === 'dark' ? '#1e293b' : '#fff', 
+                            color: theme === 'dark' ? '#f8fafc' : '#1e293b',
+                            boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)'
+                          }}
+                        />
+                        <Bar dataKey="value" radius={[6, 6, 0, 0]}>
+                          {chartStatusData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={getChartColor(entry.name, theme)} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                  </ResponsiveContainer>
+                </div>
               </div>
-               <div className="w-full h-64">
-                 <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={zoneData}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={60}
-                        outerRadius={80}
-                        paddingAngle={5}
-                        dataKey="value"
-                        stroke="none"
-                      >
-                        {zoneData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={['#6366f1', '#8b5cf6', '#ec4899', '#14b8a6'][index % 4]} />
-                        ))}
-                      </Pie>
-                      <Tooltip 
-                        contentStyle={{
-                           borderRadius: '12px', 
-                           border: 'none', 
-                           backgroundColor: theme === 'dark' ? '#1e293b' : '#fff', 
-                           color: theme === 'dark' ? '#f8fafc' : '#1e293b',
-                           boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)'
-                        }}
-                      />
-                      <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{color: theme === 'dark' ? '#94a3b8' : '#64748b', fontSize: '12px', fontWeight: 500}} />
-                    </PieChart>
-                 </ResponsiveContainer>
-               </div>
+
+              {/* Zone Chart */}
+              <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm h-80 flex flex-col animate-fade-in-up shrink-0">
+                <div className="flex justify-between items-center mb-2">
+                  <h3 className="font-bold text-slate-900 dark:text-white">Zone Activity</h3>
+                  <div className="bg-indigo-50 dark:bg-indigo-900/20 p-1.5 rounded-lg">
+                    <Icons.Filter className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                  </div>
+                </div>
+                <div className="w-full h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={zoneData}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={60}
+                          outerRadius={80}
+                          paddingAngle={5}
+                          dataKey="value"
+                          stroke="none"
+                        >
+                          {zoneData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={['#6366f1', '#8b5cf6', '#ec4899', '#14b8a6'][index % 4]} />
+                          ))}
+                        </Pie>
+                        <Tooltip 
+                          contentStyle={{
+                            borderRadius: '12px', 
+                            border: 'none', 
+                            backgroundColor: theme === 'dark' ? '#1e293b' : '#fff', 
+                            color: theme === 'dark' ? '#f8fafc' : '#1e293b',
+                            boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)'
+                          }}
+                        />
+                        <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{color: theme === 'dark' ? '#94a3b8' : '#64748b', fontSize: '12px', fontWeight: 500}} />
+                      </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
             </div>
           </div>
         </div>
