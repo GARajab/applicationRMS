@@ -17,7 +17,8 @@ const STATUS_SEQUENCE = [
   "Cost estimation",
   "Attach Utilities Drawing",
   "Engineer approval",
-  "Suspended by EDD"
+  "Suspended by EDD",
+  "Cancelled"
 ];
 
 // --- Helper Functions ---
@@ -49,6 +50,10 @@ const getStatusColor = (status: string) => {
     return 'bg-red-50 text-red-700 border border-red-200 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/20 animate-pulse';
   }
 
+  if (s === 'cancelled' || s === 'canceled') {
+    return 'bg-slate-200 text-slate-700 border border-slate-300 dark:bg-slate-700 dark:text-slate-300 dark:border-slate-600 animate-pulse';
+  }
+
   if (s.includes('gis')) {
     return 'bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20';
   }
@@ -69,6 +74,9 @@ const getChartColor = (status: string, theme: 'light' | 'dark') => {
   }
   if (s === 'suspended by edd') {
     return '#ef4444'; // red-500
+  }
+  if (s === 'cancelled' || s === 'canceled') {
+    return theme === 'dark' ? '#475569' : '#94a3b8'; // slate-500/400
   }
   if (s.includes('gis')) {
     return '#f59e0b'; // amber-500
@@ -140,8 +148,10 @@ const EditRecordModal: React.FC<{
   const handleSave = async () => {
     if (!record) return;
 
-    if (formData.status === 'Suspended by EDD' && !formData.justification?.trim()) {
-      setError('Justification is required when suspending a record.');
+    const needsJustification = formData.status === 'Suspended by EDD' || formData.status === 'Cancelled';
+
+    if (needsJustification && !formData.justification?.trim()) {
+      setError(`Justification is required when status is "${formData.status}".`);
       return;
     }
 
@@ -249,17 +259,17 @@ const EditRecordModal: React.FC<{
             </div>
 
             {/* Conditional Justification */}
-            {formData.status === 'Suspended by EDD' && (
-              <div className="md:col-span-2 animate-fade-in-down bg-red-50 dark:bg-red-900/10 p-4 rounded-xl border border-red-100 dark:border-red-900/50">
-                <label className="block text-xs font-bold text-red-600 dark:text-red-400 uppercase tracking-wider mb-2 flex items-center gap-2">
+            {(formData.status === 'Suspended by EDD' || formData.status === 'Cancelled') && (
+              <div className={`md:col-span-2 animate-fade-in-down p-4 rounded-xl border ${formData.status === 'Cancelled' ? 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700' : 'bg-red-50 dark:bg-red-900/10 border-red-100 dark:border-red-900/50'}`}>
+                <label className={`block text-xs font-bold uppercase tracking-wider mb-2 flex items-center gap-2 ${formData.status === 'Cancelled' ? 'text-slate-600 dark:text-slate-400' : 'text-red-600 dark:text-red-400'}`}>
                   <Icons.Alert className="w-4 h-4" /> Justification Required
                 </label>
                 <textarea 
                   value={formData.justification}
                   onChange={(e) => handleChange('justification', e.target.value)}
-                  placeholder="Please provide the reason for suspension..."
+                  placeholder="Please provide the reason..."
                   rows={3}
-                  className="w-full px-4 py-2.5 rounded-xl border border-red-200 dark:border-red-900/50 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:border-red-500 focus:ring-4 focus:ring-red-500/10 outline-none transition-all resize-none"
+                  className={`w-full px-4 py-2.5 rounded-xl bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none transition-all resize-none border ${formData.status === 'Cancelled' ? 'border-slate-200 dark:border-slate-700 focus:border-slate-500 focus:ring-4 focus:ring-slate-500/10' : 'border-red-200 dark:border-red-900/50 focus:border-red-500 focus:ring-4 focus:ring-red-500/10'}`}
                 />
               </div>
             )}
@@ -490,8 +500,8 @@ const ExcelUploader: React.FC<{ onUpload: (data: any[]) => void }> = ({ onUpload
               const status = String(row['Status'] || '').trim();
               const excluded = [
                 'Pending payment',
-                'Cancelled',
-                'Canceled', 
+                // 'Cancelled', // Removed as requested
+                // 'Canceled', // Removed as requested
                 'Chief approval',
                 'Head engineer approval'
               ];
@@ -1047,9 +1057,9 @@ const App: React.FC = () => {
           </div>
         </header>
 
-        {/* Status Filter Tabs (Removed Total) */}
-        <div className="mb-8 overflow-x-auto pb-2 custom-scrollbar -mx-4 px-4 md:mx-0 md:px-0">
-          <div className="flex gap-3 min-w-max">
+        {/* Status Filter Tabs (Wrapped, No Scroll) */}
+        <div className="mb-8">
+          <div className="flex flex-wrap gap-3">
             {STATUS_SEQUENCE.map((status) => {
               const count = statusCounts[status] || 0;
               const isActive = statusFilter === status;
@@ -1177,7 +1187,7 @@ const App: React.FC = () => {
                                    <Icons.Check className="w-3 h-3" /> Sent
                                  </span>
                                ) : (
-                                 <span className="text-xs text-amber-600 dark:text-amber-500 font-medium flex items-center gap-1 whitespace-nowrap">
+                                 <span className="text-xs text-amber-600 dark:text-amber-500 font-medium flex items-center gap-1 whitespace-nowrap animate-pulse">
                                    <Icons.Clock className="w-3 h-3" /> Pending
                                  </span>
                                )}
