@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS public.records (
     "referenceNumber" TEXT,
     "requireUSP" BOOLEAN DEFAULT false,
     "sentToUSPDate" TIMESTAMPTZ,
+    "justification" TEXT,
     "createdAt" TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -25,6 +26,10 @@ BEGIN
 
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'sentToUSPDate') THEN
         ALTER TABLE public.records ADD COLUMN "sentToUSPDate" TIMESTAMPTZ;
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'justification') THEN
+        ALTER TABLE public.records ADD COLUMN "justification" TEXT;
     END IF;
 END $$;
 

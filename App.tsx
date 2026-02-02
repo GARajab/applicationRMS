@@ -16,7 +16,8 @@ const STATUS_SEQUENCE = [
   "Wayleave",
   "Cost estimation",
   "Attach Utilities Drawing",
-  "Engineer approval"
+  "Engineer approval",
+  "Suspended by EDD"
 ];
 
 // --- Helper Functions ---
@@ -44,6 +45,10 @@ const getStatusColor = (status: string) => {
     return 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20';
   }
   
+  if (s === 'suspended by edd') {
+    return 'bg-red-50 text-red-700 border border-red-200 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/20 animate-pulse';
+  }
+
   if (s.includes('gis')) {
     return 'bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20';
   }
@@ -61,6 +66,9 @@ const getChartColor = (status: string, theme: 'light' | 'dark') => {
   
   if (s === 'passed' || s === 'engineer approval') {
     return '#10b981'; // emerald-500
+  }
+  if (s === 'suspended by edd') {
+    return '#ef4444'; // red-500
   }
   if (s.includes('gis')) {
     return '#f59e0b'; // amber-500
@@ -104,10 +112,12 @@ const EditRecordModal: React.FC<{
     label: string;
     requireUSP: boolean;
     sentToUSPDate: string;
+    justification: string;
   }>({ 
-    status: '', wayleaveNumber: '', label: '', requireUSP: false, sentToUSPDate: ''
+    status: '', wayleaveNumber: '', label: '', requireUSP: false, sentToUSPDate: '', justification: ''
   });
   const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     if (record) {
@@ -116,14 +126,23 @@ const EditRecordModal: React.FC<{
         wayleaveNumber: record.wayleaveNumber || '',
         label: record.label || '',
         requireUSP: record.requireUSP || false,
-        sentToUSPDate: record.sentToUSPDate ? new Date(record.sentToUSPDate).toISOString().split('T')[0] : ''
+        sentToUSPDate: record.sentToUSPDate ? new Date(record.sentToUSPDate).toISOString().split('T')[0] : '',
+        justification: record.justification || ''
       });
+      setError('');
     }
   }, [record]);
 
   const handleSave = async () => {
     if (!record) return;
+
+    if (formData.status === 'Suspended by EDD' && !formData.justification.trim()) {
+      setError('Justification is required when suspending a record.');
+      return;
+    }
+
     setIsSaving(true);
+    setError('');
     await onSave(record.id, {
       ...formData,
       sentToUSPDate: formData.sentToUSPDate ? new Date(formData.sentToUSPDate).toISOString() : undefined
@@ -136,7 +155,7 @@ const EditRecordModal: React.FC<{
 
   return (
     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
-      <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl flex flex-col animate-scale-in border border-slate-200 dark:border-slate-800">
+      <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl flex flex-col animate-scale-in border border-slate-200 dark:border-slate-800 max-h-[90vh] overflow-y-auto custom-scrollbar">
         <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
           <h2 className="text-xl font-bold text-slate-800 dark:text-white">Edit Record</h2>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
@@ -181,6 +200,22 @@ const EditRecordModal: React.FC<{
             </select>
           </div>
 
+          {/* Conditional Justification Field */}
+          {formData.status === 'Suspended by EDD' && (
+            <div className="animate-fade-in-down">
+              <label className="block text-sm font-bold text-red-600 dark:text-red-400 mb-2 flex items-center gap-2">
+                <Icons.Alert className="w-4 h-4" /> Justification (Required)
+              </label>
+              <textarea 
+                value={formData.justification}
+                onChange={(e) => setFormData({...formData, justification: e.target.value})}
+                placeholder="Enter reason for suspension..."
+                rows={3}
+                className="w-full px-4 py-2.5 rounded-xl border border-red-200 dark:border-red-900/50 bg-red-50/50 dark:bg-red-900/10 text-slate-900 dark:text-white focus:border-red-500 focus:ring-4 focus:ring-red-500/10 outline-none transition-all resize-none"
+              />
+            </div>
+          )}
+
           <div className="flex items-center gap-3 py-2 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
             <input 
               type="checkbox" 
@@ -201,6 +236,12 @@ const EditRecordModal: React.FC<{
                 onChange={(e) => setFormData({...formData, sentToUSPDate: e.target.value})}
                 className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-slate-900 dark:text-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 outline-none transition-all"
               />
+            </div>
+          )}
+
+          {error && (
+            <div className="text-red-600 text-sm font-medium flex items-center gap-2 p-3 bg-red-50 dark:bg-red-900/20 rounded-lg animate-shake">
+               <Icons.Alert className="w-4 h-4" /> {error}
             </div>
           )}
         </div>
@@ -1015,9 +1056,18 @@ const App: React.FC = () => {
                           <div className="flex items-center gap-2">
                              <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wide">Zone: {record.zone}</span>
                           </div>
+                          {record.justification && (
+                            <div className="mt-1 text-xs text-red-500 font-medium italic">
+                              Note: {record.justification}
+                            </div>
+                          )}
                         </td>
                         <td className="px-6 py-4">
                           <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold capitalize shadow-sm tracking-wide ${getStatusColor(record.status)}`}>
+                            {record.status === 'Suspended by EDD' && <span className="mr-1.5 relative flex h-2 w-2">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                              <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                            </span>}
                             {record.status}
                           </span>
                         </td>

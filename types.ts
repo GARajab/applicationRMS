@@ -10,6 +10,7 @@ export interface RecordItem {
   referenceNumber: string;  // 8. Reference Number
   requireUSP: boolean;      // 9. Require USP
   sentToUSPDate?: string;   // 10. Sent to USP Date (ISO string)
+  justification?: string;   // 11. Justification for suspension
   createdAt: string;        // System field
 }
 

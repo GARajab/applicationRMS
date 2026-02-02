@@ -21,6 +21,7 @@ export const getRecords = async (): Promise<RecordItem[]> => {
     referenceNumber: item.referenceNumber || item.reference_number,
     requireUSP: item.requireUSP ?? item.require_usp ?? false,
     sentToUSPDate: item.sentToUSPDate || item.sent_to_usp_date,
+    justification: item.justification,
   }));
 };
 
