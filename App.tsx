@@ -404,7 +404,10 @@ const EditRecordModal: React.FC<{
     requireUSP: false,
     sentToUSPDate: '',
     justification: '',
-    createdAt: ''
+    createdAt: '',
+    initialPaymentDate: '',
+    secondPayment: '',
+    thirdPayment: ''
   });
   
   const [isSaving, setIsSaving] = useState(false);
@@ -416,6 +419,7 @@ const EditRecordModal: React.FC<{
         ...record,
         sentToUSPDate: record.sentToUSPDate ? new Date(record.sentToUSPDate).toISOString().split('T')[0] : '',
         scheduleStartDate: record.scheduleStartDate ? new Date(record.scheduleStartDate).toISOString().split('T')[0] : '',
+        initialPaymentDate: record.initialPaymentDate ? new Date(record.initialPaymentDate).toISOString().split('T')[0] : '',
         justification: record.justification || ''
       });
       setError('');
@@ -438,7 +442,8 @@ const EditRecordModal: React.FC<{
     await onSave(record.id, {
       ...formData,
       sentToUSPDate: formData.sentToUSPDate ? new Date(formData.sentToUSPDate).toISOString() : undefined,
-      scheduleStartDate: formData.scheduleStartDate ? new Date(formData.scheduleStartDate).toISOString() : new Date().toISOString()
+      scheduleStartDate: formData.scheduleStartDate ? new Date(formData.scheduleStartDate).toISOString() : new Date().toISOString(),
+      initialPaymentDate: formData.initialPaymentDate ? new Date(formData.initialPaymentDate).toISOString() : undefined
     });
     
     setIsSaving(false);
@@ -533,6 +538,44 @@ const EditRecordModal: React.FC<{
                   <option value={formData.status}>{formData.status}</option>
                 )}
               </select>
+            </div>
+
+            {/* Payment Information */}
+            <div className="md:col-span-2 border-t border-slate-100 dark:border-slate-800 my-2 pt-4">
+               <h3 className="text-sm font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
+                 <Icons.CreditCard className="w-4 h-4 text-emerald-500" /> Payment Information
+               </h3>
+               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                 <div>
+                   <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Initial Payment Date</label>
+                   <input 
+                      type="date" 
+                      value={formData.initialPaymentDate}
+                      onChange={(e) => handleChange('initialPaymentDate', e.target.value)}
+                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-slate-900 dark:text-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 outline-none transition-all"
+                    />
+                 </div>
+                 <div>
+                   <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Second Payment</label>
+                   <input 
+                      type="text" 
+                      value={formData.secondPayment}
+                      onChange={(e) => handleChange('secondPayment', e.target.value)}
+                      placeholder="Amount/Ref"
+                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-slate-900 dark:text-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 outline-none transition-all"
+                    />
+                 </div>
+                 <div>
+                   <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Third Payment</label>
+                   <input 
+                      type="text" 
+                      value={formData.thirdPayment}
+                      onChange={(e) => handleChange('thirdPayment', e.target.value)}
+                      placeholder="Amount/Ref"
+                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-slate-900 dark:text-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 outline-none transition-all"
+                    />
+                 </div>
+               </div>
             </div>
 
             {/* Conditional Justification */}
@@ -1082,6 +1125,13 @@ const App: React.FC = () => {
                                 <td className="p-4">
                                     <div className="font-bold text-slate-800 dark:text-slate-200">{record.label}</div>
                                     <div className="text-xs text-slate-400">{record.plotNumber ? `Plot: ${record.plotNumber}` : 'No Plot Info'}</div>
+                                    {/* Infra Fees Applicable Indicator */}
+                                    {(record.initialPaymentDate || record.secondPayment || record.thirdPayment) && (
+                                        <div className="mt-1 flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-0.5 rounded-full w-fit">
+                                            <Icons.CreditCard className="w-3 h-3" />
+                                            <span>Infra Fees Applicable</span>
+                                        </div>
+                                    )}
                                 </td>
                                 <td className="p-4 text-sm text-slate-600 dark:text-slate-300 font-mono">
                                     {record.referenceNumber || '-'}
