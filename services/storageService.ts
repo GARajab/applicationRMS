@@ -1,5 +1,5 @@
 import { supabase } from './supabaseClient';
-import { RecordItem } from '../types';
+import { RecordItem, InfraReferenceItem } from '../types';
 
 export const getRecords = async (): Promise<RecordItem[]> => {
   const { data, error } = await supabase
@@ -99,6 +99,51 @@ export const deleteRecord = async (id: string): Promise<boolean> => {
 
   if (error) {
     console.error('Error deleting record:', error);
+    return false;
+  }
+  return true;
+};
+
+// --- Infra References Methods ---
+
+export const getInfraReferences = async (): Promise<InfraReferenceItem[]> => {
+  const { data, error } = await supabase
+    .from('infra_references')
+    .select('*')
+    .order('createdAt', { ascending: false });
+
+  if (error) {
+    console.error('Error fetching infra references:', error);
+    return [];
+  }
+  return data || [];
+};
+
+export const saveInfraReferences = async (items: { plotNumber: string, details: any }[]): Promise<boolean> => {
+  if (items.length === 0) return true;
+
+  // Supabase can handle bulk inserts. 
+  // However, large batches might fail. Chunking could be added if needed, 
+  // but for typical excel sheets (rows < 5000) it should be okay.
+  const { error } = await supabase
+    .from('infra_references')
+    .insert(items);
+
+  if (error) {
+    console.error('Error saving infra references:', error);
+    return false;
+  }
+  return true;
+};
+
+export const clearInfraReferences = async (): Promise<boolean> => {
+  const { error } = await supabase
+    .from('infra_references')
+    .delete()
+    .neq('id', '00000000-0000-0000-0000-000000000000'); // Deletes all rows
+
+  if (error) {
+    console.error('Error clearing infra references:', error);
     return false;
   }
   return true;

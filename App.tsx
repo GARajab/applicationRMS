@@ -3,7 +3,7 @@ import { Icons } from './components/Icons';
 import * as XLSX from 'xlsx';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend } from 'recharts';
 import { RecordItem, User, AuthState, Notification as AppNotification, NotificationType, SortConfig } from './types';
-import { getRecords, addRecord, deleteRecord, updateRecord } from './services/storageService';
+import { getRecords, addRecord, deleteRecord, updateRecord, getInfraReferences, saveInfraReferences, clearInfraReferences } from './services/storageService';
 import { generateDataInsights } from './services/geminiService';
 import { supabase } from './services/supabaseClient';
 
@@ -138,6 +138,27 @@ const InfraCalculatorModal: React.FC<{ isOpen: boolean; onClose: () => void }> =
   const [referenceData, setReferenceData] = useState<any[]>([]);
   const [plotSearch, setPlotSearch] = useState('');
   const [fileName, setFileName] = useState('');
+  const [isLoadingReferences, setIsLoadingReferences] = useState(false);
+
+  // Load existing references on mount
+  useEffect(() => {
+    if (isOpen) {
+        loadReferences();
+    }
+  }, [isOpen]);
+
+  const loadReferences = async () => {
+      setIsLoadingReferences(true);
+      const data = await getInfraReferences();
+      // Flatten for search component compatibility
+      // The local search logic expects a simple object per row.
+      const flattened = data.map(item => ({ ...item.details, _dbId: item.id }));
+      setReferenceData(flattened);
+      if (data.length > 0) {
+          setFileName('Database Loaded');
+      }
+      setIsLoadingReferences(false);
+  };
 
   const eddShare = useMemo(() => {
     const val = parseFloat(fees);
@@ -165,17 +186,45 @@ const InfraCalculatorModal: React.FC<{ isOpen: boolean; onClose: () => void }> =
     const file = e.target.files?.[0];
     if (!file) return;
     setFileName(file.name);
+    setIsLoadingReferences(true);
     
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
         const bstr = evt.target?.result;
         const wb = XLSX.read(bstr, { type: 'binary' });
         const wsname = wb.SheetNames[0];
         const ws = wb.Sheets[wsname];
-        const data = XLSX.utils.sheet_to_json(ws);
-        setReferenceData(data);
+        const jsonData = XLSX.utils.sheet_to_json(ws);
+        
+        // Prepare for DB
+        const dbItems = jsonData.map((row: any) => {
+            const keys = Object.keys(row);
+            const plotKey = keys.find(k => k.toLowerCase().includes('plot') || k.toLowerCase().includes('plot no') || k.toLowerCase().includes('parcel'));
+            const plotNumber = plotKey ? String(row[plotKey]).trim() : 'Unknown';
+            
+            return {
+                plotNumber,
+                details: row
+            };
+        });
+
+        // Save to DB
+        await saveInfraReferences(dbItems);
+        
+        // Reload from DB to ensure sync
+        await loadReferences();
     };
     reader.readAsBinaryString(file);
+  };
+
+  const handleClearDatabase = async () => {
+      if (confirm("Are you sure you want to delete all saved infra reference data from the database?")) {
+          setIsLoadingReferences(true);
+          await clearInfraReferences();
+          setReferenceData([]);
+          setFileName('');
+          setIsLoadingReferences(false);
+      }
   };
 
   const searchResult = useMemo(() => {
@@ -184,7 +233,7 @@ const InfraCalculatorModal: React.FC<{ isOpen: boolean; onClose: () => void }> =
     
     // Priority: Look for a specific 'Plot' column first
     const firstRow = referenceData[0] || {};
-    const keys = Object.keys(firstRow);
+    const keys = Object.keys(firstRow).filter(k => k !== '_dbId');
     const plotKey = keys.find(k => k.toLowerCase().includes('plot') || k.toLowerCase().includes('plot no') || k.toLowerCase().includes('parcel'));
     
     if (plotKey) {
@@ -299,13 +348,29 @@ const InfraCalculatorModal: React.FC<{ isOpen: boolean; onClose: () => void }> =
                 {/* Right Side: Lookup */}
                 <div className="p-6 lg:w-1/2 bg-slate-50/50 dark:bg-slate-950/30 flex flex-col h-full overflow-hidden">
                     <div className="mb-6">
-                        <h3 className="text-sm font-bold text-slate-800 dark:text-white uppercase tracking-wider mb-3">Reference Data Lookup</h3>
+                        <h3 className="text-sm font-bold text-slate-800 dark:text-white uppercase tracking-wider mb-3 flex items-center justify-between">
+                            Reference Data Lookup
+                             {referenceData.length > 0 && (
+                                <button 
+                                    onClick={handleClearDatabase}
+                                    className="text-xs text-rose-500 hover:text-rose-700 font-bold flex items-center gap-1"
+                                    title="Delete all saved data"
+                                >
+                                    <Icons.Trash className="w-3 h-3" /> Clear Database
+                                </button>
+                            )}
+                        </h3>
                         
-                        {!referenceData.length ? (
+                        {isLoadingReferences ? (
+                            <div className="border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl p-8 flex flex-col items-center justify-center text-center bg-white dark:bg-slate-900">
+                                <Icons.Spinner className="w-8 h-8 text-emerald-500 animate-spin mb-3" />
+                                <p className="text-sm font-medium text-slate-600 dark:text-slate-300">Syncing Database...</p>
+                            </div>
+                        ) : !referenceData.length ? (
                              <div className="border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl p-8 flex flex-col items-center justify-center text-center hover:border-emerald-500 dark:hover:border-emerald-500 transition-colors bg-white dark:bg-slate-900">
                                 <Icons.Upload className="w-8 h-8 text-slate-400 mb-3" />
                                 <p className="text-sm font-medium text-slate-600 dark:text-slate-300 mb-2">Upload Excel Sheet</p>
-                                <p className="text-xs text-slate-400 mb-4">Import plot data to search</p>
+                                <p className="text-xs text-slate-400 mb-4">Import plot data to database</p>
                                 <input 
                                     type="file" 
                                     accept=".xlsx, .xls" 
@@ -325,11 +390,11 @@ const InfraCalculatorModal: React.FC<{ isOpen: boolean; onClose: () => void }> =
                                 <div className="flex items-center justify-between bg-emerald-50 dark:bg-emerald-900/20 px-3 py-2 rounded-lg border border-emerald-100 dark:border-emerald-900/30">
                                     <span className="text-xs font-medium text-emerald-700 dark:text-emerald-400 flex items-center gap-2">
                                         <Icons.Excel className="w-3 h-3" /> 
-                                        {fileName}
+                                        {fileName || `${referenceData.length} records loaded`}
                                     </span>
                                     <button 
-                                        onClick={() => { setReferenceData([]); setFileName(''); setPlotSearch(''); }}
-                                        className="text-emerald-600 hover:text-emerald-800 dark:text-emerald-400 dark:hover:text-emerald-300 p-1"
+                                        onClick={() => { /* Only clear local view if needed, but for now user might want to keep it */ }}
+                                        className="text-emerald-600 hover:text-emerald-800 dark:text-emerald-400 dark:hover:text-emerald-300 p-1 opacity-0 pointer-events-none"
                                     >
                                         <Icons.Close className="w-3 h-3" />
                                     </button>
@@ -351,12 +416,15 @@ const InfraCalculatorModal: React.FC<{ isOpen: boolean; onClose: () => void }> =
                     <div className="flex-1 overflow-y-auto custom-scrollbar bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 shadow-inner min-h-[200px]">
                         {searchResult ? (
                             <div className="space-y-3">
-                                {Object.entries(searchResult).map(([key, value]) => (
-                                    <div key={key} className="flex flex-col border-b border-slate-50 dark:border-slate-800 pb-2 last:border-0 last:pb-0">
-                                        <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider mb-0.5">{key}</span>
-                                        <span className="text-sm font-medium text-slate-800 dark:text-slate-200 break-words">{String(value)}</span>
-                                    </div>
-                                ))}
+                                {Object.entries(searchResult).map(([key, value]) => {
+                                    if (key === '_dbId') return null; // Skip internal ID
+                                    return (
+                                        <div key={key} className="flex flex-col border-b border-slate-50 dark:border-slate-800 pb-2 last:border-0 last:pb-0">
+                                            <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider mb-0.5">{key}</span>
+                                            <span className="text-sm font-medium text-slate-800 dark:text-slate-200 break-words">{String(value)}</span>
+                                        </div>
+                                    );
+                                })}
                             </div>
                         ) : (
                             <div className="h-full flex flex-col items-center justify-center text-slate-400 text-center p-4 opacity-60">

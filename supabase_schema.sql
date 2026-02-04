@@ -117,11 +117,28 @@ BEGIN
     END IF;
 END $$;
 
--- 3. Enable Row Level Security (Recommended for production)
-ALTER TABLE public.records ENABLE ROW LEVEL SECURITY;
+-- 3. Create infra_references table for Infra Calculator
+CREATE TABLE IF NOT EXISTS public.infra_references (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    "plotNumber" TEXT,
+    details JSONB,
+    "createdAt" TIMESTAMPTZ DEFAULT NOW()
+);
 
--- 4. Create Access Policies
+-- Index for faster search on plot number
+CREATE INDEX IF NOT EXISTS idx_infra_plot ON public.infra_references ("plotNumber");
+
+-- 4. Enable Row Level Security (Recommended for production)
+ALTER TABLE public.records ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.infra_references ENABLE ROW LEVEL SECURITY;
+
+-- 5. Create Access Policies
 CREATE POLICY "Allow full access to authenticated users" ON public.records
+    FOR ALL
+    USING (auth.role() = 'authenticated')
+    WITH CHECK (auth.role() = 'authenticated');
+
+CREATE POLICY "Allow full access to infra_references for authenticated users" ON public.infra_references
     FOR ALL
     USING (auth.role() = 'authenticated')
     WITH CHECK (auth.role() = 'authenticated');

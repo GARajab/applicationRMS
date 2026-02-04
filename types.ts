@@ -43,6 +43,13 @@ export interface RecordItem {
   partialExemption?: string;
 }
 
+export interface InfraReferenceItem {
+  id: string;
+  plotNumber: string;
+  details: Record<string, any>;
+  createdAt: string;
+}
+
 export interface User {
   id: string;
   username: string;
