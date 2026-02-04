@@ -12,6 +12,35 @@ export interface RecordItem {
   sentToUSPDate?: string;   // 10. Sent to USP Date (ISO string)
   justification?: string;   // 11. Justification for suspension
   createdAt: string;        // System field
+
+  // New Fields
+  applicationNumber?: string;
+  bpRequestNumber?: string;
+  versionNumber?: string;
+  constructionType?: string;
+  ewaFeeStatus?: string;
+  applicationStatus?: string; // Distinct from internal 'status'
+  landOwnerId?: string;
+  ownerNameEn?: string;
+  ownerNameAr?: string;
+  numberOfAddresses?: string;
+  mouGatedCommunity?: string;
+  buildingNumber?: string;
+  roadNumber?: string;
+  plotNumber?: string; // Parcel / Plot number
+  titleDeed?: string;
+  buildableArea?: string;
+  momaaLoad?: string;
+  applicationDate?: string; // Date
+  nationality?: string;
+  propertyCategory?: string;
+  usageNature?: string;
+  investmentZone?: string;
+  initialPaymentDate?: string;
+  secondPayment?: string;
+  thirdPayment?: string;
+  errorLog?: string;
+  partialExemption?: string;
 }
 
 export interface User {

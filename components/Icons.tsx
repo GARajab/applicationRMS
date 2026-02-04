@@ -22,7 +22,8 @@ import {
   User,
   Sun,
   Moon,
-  Save
+  Save,
+  Calculator
 } from 'lucide-react';
 
 export const Icons = {
@@ -49,5 +50,6 @@ export const Icons = {
   User: User,
   Sun: Sun,
   Moon: Moon,
-  Save: Save
+  Save: Save,
+  Calculator: Calculator
 };

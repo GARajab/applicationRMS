@@ -26,6 +26,35 @@ export const getRecords = async (): Promise<RecordItem[]> => {
     label: item.label || 'Untitled', // Default fallback
     block: item.block || '',
     zone: item.zone || '',
+    
+    // New fields mapping (if casing differs in future or just for safety)
+    applicationNumber: item.applicationNumber || item.application_number,
+    bpRequestNumber: item.bpRequestNumber || item.bp_request_number,
+    versionNumber: item.versionNumber || item.version_number,
+    constructionType: item.constructionType || item.construction_type,
+    ewaFeeStatus: item.ewaFeeStatus || item.ewa_fee_status,
+    applicationStatus: item.applicationStatus || item.application_status,
+    landOwnerId: item.landOwnerId || item.land_owner_id,
+    ownerNameEn: item.ownerNameEn || item.owner_name_en,
+    ownerNameAr: item.ownerNameAr || item.owner_name_ar,
+    numberOfAddresses: item.numberOfAddresses || item.number_of_addresses,
+    mouGatedCommunity: item.mouGatedCommunity || item.mou_gated_community,
+    buildingNumber: item.buildingNumber || item.building_number,
+    roadNumber: item.roadNumber || item.road_number,
+    plotNumber: item.plotNumber || item.plot_number,
+    titleDeed: item.titleDeed || item.title_deed,
+    buildableArea: item.buildableArea || item.buildable_area,
+    momaaLoad: item.momaaLoad || item.momaa_load,
+    applicationDate: item.applicationDate || item.application_date,
+    nationality: item.nationality,
+    propertyCategory: item.propertyCategory || item.property_category,
+    usageNature: item.usageNature || item.usage_nature,
+    investmentZone: item.investmentZone || item.investment_zone,
+    initialPaymentDate: item.initialPaymentDate || item.initial_payment_date,
+    secondPayment: item.secondPayment || item.second_payment,
+    thirdPayment: item.thirdPayment || item.third_payment,
+    errorLog: item.errorLog || item.error_log,
+    partialExemption: item.partialExemption || item.partial_exemption
   }));
 };
 

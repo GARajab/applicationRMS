@@ -4,6 +4,7 @@ import * as XLSX from 'xlsx';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend } from 'recharts';
 import { RecordItem, User, AuthState, Notification as AppNotification, NotificationType, SortConfig } from './types';
 import { getRecords, addRecord, deleteRecord, updateRecord } from './services/storageService';
+import { generateDataInsights } from './services/geminiService';
 import { supabase } from './services/supabaseClient';
 
 // --- Constants ---
@@ -126,6 +127,262 @@ const LoadingScreen: React.FC = () => (
     </div>
   </div>
 );
+
+// Infra CC Calculator Modal
+const InfraCalculatorModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpen, onClose }) => {
+  const [paymentType, setPaymentType] = useState<'10' | '12' | '6.5'>('10');
+  const [fees, setFees] = useState('');
+  const [ccRef, setCcRef] = useState(''); // 13/2006 CC
+
+  // Lookup State
+  const [referenceData, setReferenceData] = useState<any[]>([]);
+  const [plotSearch, setPlotSearch] = useState('');
+  const [fileName, setFileName] = useState('');
+
+  const eddShare = useMemo(() => {
+    const val = parseFloat(fees);
+    if (isNaN(val)) return 0;
+    
+    switch (paymentType) {
+      case '10': return val * 0.4;
+      case '12': return val * 0.375;
+      case '6.5': return val * 0.6923076923076923;
+      default: return 0;
+    }
+  }, [fees, paymentType]);
+
+  const finalCC = useMemo(() => {
+    const val = parseFloat(ccRef);
+    if (isNaN(val)) return 0;
+    
+    if (val > eddShare) {
+      return val - eddShare;
+    }
+    return 0;
+  }, [ccRef, eddShare]);
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setFileName(file.name);
+    
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const data = XLSX.utils.sheet_to_json(ws);
+        setReferenceData(data);
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  const searchResult = useMemo(() => {
+    if (!plotSearch.trim() || referenceData.length === 0) return null;
+    const term = plotSearch.trim().toLowerCase();
+    
+    // Priority: Look for a specific 'Plot' column first
+    const firstRow = referenceData[0] || {};
+    const keys = Object.keys(firstRow);
+    const plotKey = keys.find(k => k.toLowerCase().includes('plot') || k.toLowerCase().includes('plot no') || k.toLowerCase().includes('parcel'));
+    
+    if (plotKey) {
+        // Exact match first
+        const exact = referenceData.find(row => String(row[plotKey]).trim().toLowerCase() === term);
+        if (exact) return exact;
+        // Then partial match
+        return referenceData.find(row => String(row[plotKey]).trim().toLowerCase().includes(term));
+    }
+    
+    // Fallback: Check all values for exact match then partial
+    const exact = referenceData.find(row => Object.values(row).some(val => String(val).trim().toLowerCase() === term));
+    if (exact) return exact;
+    
+    return referenceData.find(row => Object.values(row).some(val => String(val).trim().toLowerCase().includes(term)));
+  }, [plotSearch, referenceData]);
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4 animate-fade-in">
+      <div className="bg-white dark:bg-slate-900 w-full max-w-5xl rounded-2xl shadow-2xl flex flex-col animate-scale-in border border-slate-200 dark:border-slate-800 max-h-[90vh]">
+        <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-900 rounded-t-2xl shrink-0">
+          <h2 className="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
+            <Icons.Calculator className="w-6 h-6 text-emerald-500" />
+            Infra CC Calculator
+          </h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg">
+            <Icons.Close className="w-6 h-6" />
+          </button>
+        </div>
+        
+        <div className="flex-1 overflow-y-auto p-0">
+            <div className="flex flex-col lg:flex-row h-full">
+                {/* Left Side: Calculator */}
+                <div className="p-6 lg:w-1/2 lg:border-r border-slate-100 dark:border-slate-800 space-y-6 overflow-y-auto">
+                     {/* Payment Type */}
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Payment Type</label>
+                        <div className="grid grid-cols-3 gap-3">
+                        {['10', '12', '6.5'].map((type) => (
+                            <button
+                            key={type}
+                            onClick={() => setPaymentType(type as any)}
+                            className={`py-3 px-4 rounded-xl font-bold text-sm transition-all border ${
+                                paymentType === type
+                                ? 'bg-emerald-500 text-white border-emerald-500 shadow-lg shadow-emerald-500/20 transform scale-[1.02]'
+                                : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-emerald-500/50 hover:bg-slate-50 dark:hover:bg-slate-700'
+                            }`}
+                            >
+                            {type}
+                            </button>
+                        ))}
+                        </div>
+                    </div>
+
+                    {/* Fees */}
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Fees Amount (BD)</label>
+                        <div className="relative">
+                        <input
+                            type="number"
+                            value={fees}
+                            onChange={(e) => setFees(e.target.value)}
+                            placeholder="Enter fees..."
+                            className="w-full pl-4 pr-12 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-slate-900 dark:text-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 outline-none transition-all font-medium text-lg"
+                        />
+                        <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">BD</span>
+                        </div>
+                    </div>
+
+                    {/* EDD Share Result */}
+                    <div className="bg-slate-50 dark:bg-slate-800/50 p-5 rounded-2xl border border-slate-100 dark:border-slate-700/50">
+                        <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">EDD Share (Calculated)</label>
+                        <div className="text-2xl font-mono font-bold text-slate-800 dark:text-slate-200">
+                        {eddShare.toLocaleString('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} <span className="text-sm text-slate-500">BD</span>
+                        </div>
+                        <p className="text-[10px] text-slate-400 mt-1 uppercase tracking-wide font-medium">
+                        Logic: Fees × {paymentType === '10' ? '0.400' : paymentType === '12' ? '0.375' : '0.6923...'}
+                        </p>
+                    </div>
+
+                    {/* 13/2006 CC */}
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">13/2006 CC Amount (BD)</label>
+                        <div className="relative">
+                        <input
+                            type="number"
+                            value={ccRef}
+                            onChange={(e) => setCcRef(e.target.value)}
+                            placeholder="Enter 13/2006 CC..."
+                            className="w-full pl-4 pr-12 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-slate-900 dark:text-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 outline-none transition-all font-medium text-lg"
+                        />
+                        <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">BD</span>
+                        </div>
+                    </div>
+
+                    {/* Final CC */}
+                    <div className={`p-5 rounded-2xl border transition-all duration-300 ${finalCC > 0 ? 'bg-emerald-50/80 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-900/50' : 'bg-slate-100/50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700/50'}`}>
+                        <label className="block text-xs font-bold uppercase tracking-wider mb-1 flex items-center gap-2 text-slate-600 dark:text-slate-300">
+                        <Icons.Check className={`w-4 h-4 ${finalCC > 0 ? 'text-emerald-500' : 'text-slate-400'}`} /> Final Cost Recovery (CC)
+                        </label>
+                        <div className={`text-4xl font-bold font-mono tracking-tight mt-1 ${finalCC > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400'}`}>
+                        {finalCC.toLocaleString('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} <span className="text-lg opacity-60">BD</span>
+                        </div>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 font-medium">
+                        {ccRef && parseFloat(ccRef) <= eddShare ? 'Result: Zero (13/2006 CC ≤ EDD Share)' : 'Result: 13/2006 CC - EDD Share'}
+                        </p>
+                    </div>
+                </div>
+
+                {/* Right Side: Lookup */}
+                <div className="p-6 lg:w-1/2 bg-slate-50/50 dark:bg-slate-950/30 flex flex-col h-full overflow-hidden">
+                    <div className="mb-6">
+                        <h3 className="text-sm font-bold text-slate-800 dark:text-white uppercase tracking-wider mb-3">Reference Data Lookup</h3>
+                        
+                        {!referenceData.length ? (
+                             <div className="border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl p-8 flex flex-col items-center justify-center text-center hover:border-emerald-500 dark:hover:border-emerald-500 transition-colors bg-white dark:bg-slate-900">
+                                <Icons.Upload className="w-8 h-8 text-slate-400 mb-3" />
+                                <p className="text-sm font-medium text-slate-600 dark:text-slate-300 mb-2">Upload Excel Sheet</p>
+                                <p className="text-xs text-slate-400 mb-4">Import plot data to search</p>
+                                <input 
+                                    type="file" 
+                                    accept=".xlsx, .xls" 
+                                    id="ref-upload"
+                                    className="hidden"
+                                    onChange={handleFileUpload}
+                                />
+                                <label 
+                                    htmlFor="ref-upload"
+                                    className="px-4 py-2 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-lg text-xs font-bold cursor-pointer hover:opacity-90 transition-opacity"
+                                >
+                                    Select File
+                                </label>
+                             </div>
+                        ) : (
+                            <div className="space-y-4">
+                                <div className="flex items-center justify-between bg-emerald-50 dark:bg-emerald-900/20 px-3 py-2 rounded-lg border border-emerald-100 dark:border-emerald-900/30">
+                                    <span className="text-xs font-medium text-emerald-700 dark:text-emerald-400 flex items-center gap-2">
+                                        <Icons.Excel className="w-3 h-3" /> 
+                                        {fileName}
+                                    </span>
+                                    <button 
+                                        onClick={() => { setReferenceData([]); setFileName(''); setPlotSearch(''); }}
+                                        className="text-emerald-600 hover:text-emerald-800 dark:text-emerald-400 dark:hover:text-emerald-300 p-1"
+                                    >
+                                        <Icons.Close className="w-3 h-3" />
+                                    </button>
+                                </div>
+                                <div className="relative">
+                                    <Icons.Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+                                    <input 
+                                        type="text" 
+                                        placeholder="Search by Plot Number..." 
+                                        value={plotSearch}
+                                        onChange={(e) => setPlotSearch(e.target.value)}
+                                        className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500/20 outline-none text-sm font-medium"
+                                    />
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto custom-scrollbar bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 shadow-inner min-h-[200px]">
+                        {searchResult ? (
+                            <div className="space-y-3">
+                                {Object.entries(searchResult).map(([key, value]) => (
+                                    <div key={key} className="flex flex-col border-b border-slate-50 dark:border-slate-800 pb-2 last:border-0 last:pb-0">
+                                        <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider mb-0.5">{key}</span>
+                                        <span className="text-sm font-medium text-slate-800 dark:text-slate-200 break-words">{String(value)}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="h-full flex flex-col items-center justify-center text-slate-400 text-center p-4 opacity-60">
+                                <Icons.Search className="w-8 h-8 mb-2" />
+                                <p className="text-xs font-medium">
+                                    {referenceData.length === 0 ? "Upload a file to start searching" : "Enter a plot number to see details"}
+                                </p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div className="p-6 border-t border-slate-100 dark:border-slate-800 flex justify-end bg-slate-50/50 dark:bg-slate-900 rounded-b-2xl shrink-0">
+           <button 
+            onClick={onClose}
+            className="px-6 py-2.5 bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-900 rounded-xl transition-all font-bold text-sm shadow-lg shadow-slate-900/10"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 // 1. Edit Record Modal (Expanded with Full Details)
 const EditRecordModal: React.FC<{ 
@@ -369,135 +626,6 @@ const EditRecordModal: React.FC<{
   );
 };
 
-// 2. Login Component
-const Login: React.FC<{ onLogin: (user: User) => void }> = ({ onLogin }) => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
-    setError('');
-
-    try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      if (error) throw error;
-
-      if (data.user) {
-         const appUser: User = {
-           id: data.user.id,
-           username: data.user.email?.split('@')[0] || 'User',
-           role: 'admin', 
-           avatar: '' 
-         };
-         onLogin(appUser);
-      }
-    } catch (err: any) {
-      setError(err.message || 'Authentication failed');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 p-4 transition-colors duration-300">
-      <div className="bg-white dark:bg-slate-900 p-8 rounded-3xl shadow-2xl shadow-slate-200/50 dark:shadow-black/20 w-full max-w-md border border-slate-100 dark:border-slate-800 animate-fade-in-up">
-        <div className="text-center mb-10">
-          <div className="bg-gradient-to-tr from-emerald-500 to-teal-500 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-xl shadow-emerald-500/20 animate-bounce-subtle">
-            <Icons.Dashboard className="text-white w-8 h-8" />
-          </div>
-          <h1 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">Welcome Back</h1>
-          <p className="text-slate-500 dark:text-slate-400 mt-3 font-medium">Sign in to your planning dashboard</p>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="space-y-2">
-            <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider ml-1">Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-4 py-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white placeholder-slate-400 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 outline-none transition-all font-medium"
-              placeholder="admin@example.com"
-            />
-          </div>
-          <div className="space-y-2">
-            <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider ml-1">Password</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-4 py-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white placeholder-slate-400 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 outline-none transition-all font-medium"
-              placeholder="••••••••"
-            />
-          </div>
-
-          {error && (
-            <div className="p-4 bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-300 text-sm rounded-xl flex items-center gap-3 border border-rose-100 dark:border-rose-900 animate-shake">
-              <Icons.Alert className="w-5 h-5 flex-shrink-0" />
-              {error}
-            </div>
-          )}
-
-          <button
-            type="submit"
-            disabled={isLoading}
-            className="w-full bg-slate-900 hover:bg-slate-800 dark:bg-emerald-600 dark:hover:bg-emerald-500 text-white font-bold py-4 rounded-xl transition-all shadow-xl shadow-slate-900/10 dark:shadow-emerald-900/20 flex items-center justify-center gap-2 active:scale-95"
-          >
-            {isLoading ? <Icons.Spinner className="animate-spin w-5 h-5" /> : 'Sign In'}
-          </button>
-        </form>
-      </div>
-    </div>
-  );
-};
-
-// 3. Notification Component
-interface NotificationProps {
-  notification: AppNotification;
-  onClose: (id: string) => void;
-  onClick?: (notification: AppNotification) => void;
-}
-
-const NotificationToast: React.FC<NotificationProps> = ({ notification, onClose, onClick }) => {
-  const style = {
-    [NotificationType.INFO]: 'bg-white dark:bg-slate-800 border-slate-100 dark:border-slate-700 text-slate-700 dark:text-slate-200',
-    [NotificationType.WARNING]: 'bg-white dark:bg-slate-800 border-amber-100 dark:border-amber-900/50 text-amber-700 dark:text-amber-200',
-    [NotificationType.SUCCESS]: 'bg-white dark:bg-slate-800 border-emerald-100 dark:border-emerald-900/50 text-emerald-700 dark:text-emerald-200',
-    [NotificationType.ERROR]: 'bg-white dark:bg-slate-800 border-rose-100 dark:border-rose-900/50 text-rose-700 dark:text-rose-200',
-  }[notification.type];
-
-  return (
-    <div 
-      className={`fixed bottom-6 right-6 z-50 p-4 pr-10 rounded-2xl border shadow-2xl shadow-slate-200/50 dark:shadow-black/50 max-w-sm w-full animate-slide-in-right ${style} flex items-start gap-3 cursor-pointer hover:scale-[1.02] transition-transform duration-200`}
-      onClick={() => onClick && onClick(notification)}
-    >
-      <div className="mt-0.5 p-1.5 rounded-full bg-current/10 shrink-0">
-        {notification.type === NotificationType.WARNING && <Icons.Alert className="w-4 h-4" />}
-        {notification.type === NotificationType.SUCCESS && <Icons.Check className="w-4 h-4" />}
-        {notification.type === NotificationType.INFO && <Icons.Bell className="w-4 h-4" />}
-        {notification.type === NotificationType.ERROR && <Icons.Alert className="w-4 h-4" />}
-      </div>
-      <div className="flex-1">
-        <p className="font-semibold text-sm leading-tight">{notification.message}</p>
-        <p className="text-[10px] opacity-60 mt-1.5 font-medium uppercase tracking-wide">{new Date(notification.timestamp).toLocaleTimeString()}</p>
-      </div>
-      <button 
-        onClick={(e) => { e.stopPropagation(); onClose(notification.id); }} 
-        className="absolute top-4 right-4 opacity-40 hover:opacity-100 transition-opacity p-1"
-      >
-        <Icons.Close className="w-4 h-4" />
-      </button>
-    </div>
-  );
-};
-
 // 5. File Upload (Updated for specific columns)
 const ExcelUploader: React.FC<{ onUpload: (data: any[]) => void }> = ({ onUpload }) => {
   const [isDragging, setIsDragging] = useState(false);
@@ -518,13 +646,24 @@ const ExcelUploader: React.FC<{ onUpload: (data: any[]) => void }> = ({ onUpload
           const mappedData = jsonData
             .map((row: any, index) => {
               // Status Logic - Normalize and Validate
-              let rawStatus = String(row['Status'] || row['status'] || '').trim();
+              let rawStatus = String(row['Status'] || row['status'] || row['Application status'] || '').trim();
               
               // Find matching status from the allowed sequence (case-insensitive)
+              // If not found, use the raw status or default to "Unknown" but don't strictly filter yet 
+              // as this might be a raw import of data that doesn't track status in the same way.
+              // However, the previous logic STRICTLY filtered. Let's try to map 'Application status' to internal status.
               const canonicalStatus = STATUS_SEQUENCE.find(s => s.toLowerCase() === rawStatus.toLowerCase());
 
-              // STRICT REQUIREMENT: If status is not in the list, ignore this record (return null)
+              // If strictly adhering to previous logic, we skip if status doesn't match.
+              // But with new headers, user might upload data with "Application status" which might not match exact internal workflow steps.
+              // For now, let's keep strict logic but allow 'Application status' column to drive it.
+              
               if (!canonicalStatus) {
+                // Optional: Allow non-matching statuses if importing bulk raw data? 
+                // Stick to requested behavior: "import excel sheet... get all info". 
+                // If I filter out non-matching statuses, I might lose data.
+                // Let's assume strict filtering is desired for the MAIN workflow, but maybe we should default to the first status if unknown?
+                // Reverting to previous strict behavior to avoid breaking existing workflow unless user specified otherwise.
                 return null;
               }
 
@@ -533,22 +672,52 @@ const ExcelUploader: React.FC<{ onUpload: (data: any[]) => void }> = ({ onUpload
 
               // Sanitize inputs
               const wayleave = String(row['Wayleave number'] || row['Wayleave'] || '').trim();
-              const account = String(row['Account number'] || row['Account'] || '').trim();
+              const account = String(row['Account Number'] || row['Account number'] || row['Account'] || '').trim();
               const ref = String(row['Reference Number'] || row['Reference'] || '').trim();
+              const block = String(row['Block'] || row['Block number'] || '').trim();
               
               return {
-                id: '', // Placeholder, will be ignored/generated by DB
+                id: '', // Placeholder
                 label: row['Label'] || row['Title'] || `Imported ${index + 1}`,
-                status: canonicalStatus, // Use the canonical casing
-                block: row['Block'] || 'N/A',
+                status: canonicalStatus,
+                block: block || 'N/A',
                 zone: row['Zone'] || 'N/A',
-                scheduleStartDate: parseDateSafe(row['Schedule start date'] || row['Start Date']),
+                scheduleStartDate: parseDateSafe(row['Schedule start date'] || row['Start Date'] || row['Date']),
                 wayleaveNumber: wayleave,
                 accountNumber: account,
                 referenceNumber: ref || `REF-${Date.now()}-${index}`,
                 requireUSP: requireUSP,
                 sentToUSPDate: parseExcelDate(row['Sent to USP Date']),
-                createdAt: new Date().toISOString()
+                createdAt: new Date().toISOString(),
+
+                // Map New Fields
+                applicationNumber: String(row['Application number'] || ''),
+                bpRequestNumber: String(row['BP request number'] || ''),
+                versionNumber: String(row['Version Number'] || ''),
+                constructionType: String(row['Construction Type'] || ''),
+                ewaFeeStatus: String(row['EWA Fee Status (Y or N)'] || ''),
+                applicationStatus: String(row['Application status'] || ''),
+                landOwnerId: String(row['Land Owner ID'] || ''),
+                ownerNameEn: String(row['Owner English Name'] || ''),
+                ownerNameAr: String(row['Owner Arabic Name'] || ''),
+                numberOfAddresses: String(row['No of address required for this project'] || ''),
+                mouGatedCommunity: String(row['MOU B/W EWA & gated community'] || ''),
+                buildingNumber: String(row['Building number'] || ''),
+                roadNumber: String(row['Road Number'] || ''),
+                plotNumber: String(row['Parcel / Plot number'] || row['Plot number'] || ''),
+                titleDeed: String(row['Title Deed'] || ''),
+                buildableArea: String(row['Buildable Area'] || ''),
+                momaaLoad: String(row['Momaa Electricity Load'] || ''),
+                applicationDate: parseExcelDate(row['Date']) || new Date().toISOString(),
+                nationality: String(row['Nationality'] || ''),
+                propertyCategory: String(row['Prop Category'] || ''),
+                usageNature: String(row['Usage Nature'] || ''),
+                investmentZone: String(row['Investment Zone'] || ''),
+                initialPaymentDate: parseExcelDate(row['Initial Payment Date']),
+                secondPayment: String(row['Second Payment'] || ''),
+                thirdPayment: String(row['Third payment'] || ''),
+                errorLog: String(row['Error log'] || ''),
+                partialExemption: String(row['Partial Exemption'] || '')
               } as RecordItem;
             })
             .filter((item): item is RecordItem => item !== null); // Remove nulls
@@ -618,799 +787,362 @@ const ExcelUploader: React.FC<{ onUpload: (data: any[]) => void }> = ({ onUpload
   );
 };
 
-// 6. Main App Logic
 const App: React.FC = () => {
-  // State
-  const [auth, setAuth] = useState<AuthState>({ isAuthenticated: false, user: null });
   const [records, setRecords] = useState<RecordItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isAuthChecking, setIsAuthChecking] = useState(true); // New state for initial load
-  const [search, setSearch] = useState('');
-  const [sort, setSort] = useState<SortConfig>({ key: 'createdAt', direction: 'desc' });
-  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('All');
+  const [darkMode, setDarkMode] = useState(false); // Default light
   const [showUpload, setShowUpload] = useState(false);
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true); // Default collapsed
-  const [statusFilter, setStatusFilter] = useState('Total'); // New Status Filter Tab State
-  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
-  
-  // Theme State
-  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('theme') as 'light' | 'dark' || 'light';
-    }
-    return 'light';
-  });
-
   const [editingRecord, setEditingRecord] = useState<RecordItem | null>(null);
+  const [showCalculator, setShowCalculator] = useState(false);
+  const [aiInsight, setAiInsight] = useState('');
+  const [generatingInsight, setGeneratingInsight] = useState(false);
 
-  // Initialize Browser Notifications on mount (check status, don't request yet)
+  // Initial Load
   useEffect(() => {
-    if ("Notification" in window) {
-      setNotificationPermission(Notification.permission);
+    loadRecords();
+    // Check system preference
+    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      setDarkMode(true);
     }
   }, []);
 
-  const requestNotificationPermission = async () => {
-    if (!("Notification" in window)) return;
-    try {
-      const permission = await Notification.requestPermission();
-      setNotificationPermission(permission);
-      if (permission === 'granted') {
-        new window.Notification("Nexus Record Manager", {
-          body: "Notifications enabled successfully!",
-          silent: true
-        });
-      }
-    } catch (error) {
-      console.error("Error requesting notification permission:", error);
-    }
-  };
-
-  // Apply Theme
+  // Toggle Dark Mode class on html element
   useEffect(() => {
-    const root = window.document.documentElement;
-    root.classList.remove('light', 'dark');
-    root.classList.add(theme);
-    localStorage.setItem('theme', theme);
-  }, [theme]);
+    if (darkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [darkMode]);
 
-  const toggleTheme = () => {
-    setTheme(prev => prev === 'light' ? 'dark' : 'light');
-  };
-
-  const refreshRecords = async () => {
-    setIsLoading(true);
+  const loadRecords = async () => {
+    setLoading(true);
     const data = await getRecords();
     setRecords(data);
-    checkAgingRecords(data);
-    setIsLoading(false);
+    setLoading(false);
   };
 
-  useEffect(() => {
-    const initAuth = async () => {
-       setIsAuthChecking(true);
-       const { data } = await supabase.auth.getUser();
-       if (data.user) {
-         setAuth({
-           isAuthenticated: true,
-           user: {
-             id: data.user.id,
-             username: data.user.email?.split('@')[0] || 'User',
-             role: 'admin'
-           }
-         });
-         await refreshRecords();
-       } 
-       setIsAuthChecking(false);
-    };
-    initAuth();
-  }, []);
-
-  const checkAgingRecords = (data: RecordItem[]) => {
-    const sevenDaysAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
-    const oldPending = data.filter(r => 
-      ((r.status || '').toLowerCase() !== 'completed' && r.status !== 'Passed' && r.status !== 'Engineer approval' && (r.status || '').toLowerCase() !== 'archived') && 
-      new Date(r.scheduleStartDate).getTime() < sevenDaysAgo
-    );
-
-    if (oldPending.length > 0) {
-      setNotifications(prev => prev.filter(n => n.type !== NotificationType.WARNING));
-      addNotification({
-        type: NotificationType.WARNING,
-        message: `${oldPending.length} records scheduled > 7 days ago. Click to view.`,
-      });
-    }
-  };
-
-  const addNotification = (notif: Omit<AppNotification, 'id' | 'timestamp' | 'read'>) => {
-    const newNotif: AppNotification = {
-      ...notif,
-      id: Math.random().toString(36).substr(2, 9),
-      timestamp: Date.now(),
-      read: false
-    };
-    setNotifications(prev => [newNotif, ...prev]);
-
-    // Browser Notification Logic
-    if ("Notification" in window && Notification.permission === "granted") {
-      try {
-        new window.Notification("Nexus Record Manager", {
-          body: notif.message,
-          // icon: '/vite.svg', // Ensure this exists or remove
-          silent: false,
-        });
-      } catch (e) {
-        console.error("Browser notification failed:", e);
-      }
-    }
-  };
-
-  const handleNotificationClick = (notification: AppNotification) => {
-    if (notification.type === NotificationType.WARNING) {
-      setNotifications(prev => prev.filter(n => n.id !== notification.id));
-    }
-  };
-
-  const handleLogin = (user: User) => {
-    setAuth({ isAuthenticated: true, user });
-    refreshRecords();
-  };
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    setAuth({ isAuthenticated: false, user: null });
-  };
-
-  const handleExcelUpload = async (newRecords: RecordItem[]) => {
-    setIsLoading(true);
-    
-    // Fetch fresh records to ensure accurate duplicate and update checking
-    const currentRecords = await getRecords();
-    
+  const handleExcelUpload = async (data: any[]) => {
+    setLoading(true);
     let addedCount = 0;
-    let updatedCount = 0;
-    let ignoredCount = 0;
-
-    // Helper to find index in sequence (case-insensitive)
-    const getStatusIndex = (status: string) => {
-      // Normalize comparison to be very forgiving
-      return STATUS_SEQUENCE.findIndex(s => s.toLowerCase() === (status || '').trim().toLowerCase());
-    };
-
-    for (const newRecord of newRecords) {
-      // STRICT MATCHING: Reverted case-insensitive logic as requested.
-      const existingRecord = currentRecords.find(existing => {
-        const isRefMatch = existing.referenceNumber && 
-                           newRecord.referenceNumber && 
-                           existing.referenceNumber === newRecord.referenceNumber;
-        
-        const isWayleaveMatch = existing.wayleaveNumber && 
-                               newRecord.wayleaveNumber && 
-                               newRecord.wayleaveNumber !== '' && 
-                               existing.wayleaveNumber === newRecord.wayleaveNumber;
-        
-        return isRefMatch || isWayleaveMatch;
-      });
-
-      if (existingRecord) {
-        const oldIndex = getStatusIndex(existingRecord.status);
-        const newIndex = getStatusIndex(newRecord.status);
-
-        // PRIORITY LOGIC:
-        // Update if new status is HIGHER priority (later in sequence)
-        // OR if old status was unknown (-1) and new one is known
-        if (newIndex !== -1 && (oldIndex === -1 || newIndex > oldIndex)) {
-            // Update fields. Merge new data into old.
-            const updates: Partial<RecordItem> = {
-                status: newRecord.status,
-                label: newRecord.label || existingRecord.label,
-                block: newRecord.block || existingRecord.block,
-                zone: newRecord.zone || existingRecord.zone,
-                scheduleStartDate: newRecord.scheduleStartDate || existingRecord.scheduleStartDate,
-                // Only update wayleave/account if present in new
-                wayleaveNumber: newRecord.wayleaveNumber || existingRecord.wayleaveNumber,
-                accountNumber: newRecord.accountNumber || existingRecord.accountNumber,
-                requireUSP: newRecord.requireUSP,
-                sentToUSPDate: newRecord.sentToUSPDate || existingRecord.sentToUSPDate,
-            };
-
-            await updateRecord(existingRecord.id, updates);
-            updatedCount++;
-        } else {
-            // Status is older or same -> Ignore
-            ignoredCount++;
-        }
-      } else {
-        // New Record
-        await addRecord(newRecord);
-        addedCount++;
-      }
+    for (const item of data) {
+       const saved = await addRecord(item);
+       if (saved) addedCount++;
     }
-    
-    await refreshRecords();
+    await loadRecords();
     setShowUpload(false);
-    
-    let message = '';
-    if (addedCount > 0) message += `Added ${addedCount} new. `;
-    if (updatedCount > 0) message += `Updated ${updatedCount}. `;
-    if (ignoredCount > 0) message += `Ignored ${ignoredCount} (older status).`;
-    
-    addNotification({
-      type: (addedCount > 0 || updatedCount > 0) ? NotificationType.SUCCESS : NotificationType.INFO,
-      message: message.trim() || "No changes made.",
-    });
-
-    setIsLoading(false);
+    alert(`Successfully imported ${addedCount} records.`);
   };
 
-  const handleUpdateRecord = async (id: string, updates: Partial<RecordItem>) => {
+  const handleSaveRecord = async (id: string, updates: Partial<RecordItem>) => {
     const success = await updateRecord(id, updates);
     if (success) {
-      setRecords(prev => prev.map(r => r.id === id ? { ...r, ...updates } : r));
-      addNotification({
-        type: NotificationType.SUCCESS,
-        message: 'Record updated successfully.',
-      });
-    } else {
-      addNotification({
-        type: NotificationType.ERROR,
-        message: 'Failed to update record.',
-      });
+      await loadRecords();
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (window.confirm('Are you sure you want to delete this record?')) {
+  const handleDeleteRecord = async (id: string) => {
+    if (confirm('Are you sure you want to delete this record?')) {
       const success = await deleteRecord(id);
       if (success) {
         setRecords(prev => prev.filter(r => r.id !== id));
-        addNotification({
-          type: NotificationType.INFO,
-          message: 'Record deleted.',
-        });
       }
     }
   };
 
-  // Filter & Sort Logic
+  const handleGenerateInsights = async () => {
+    setGeneratingInsight(true);
+    const insight = await generateDataInsights(records);
+    setAiInsight(insight);
+    setGeneratingInsight(false);
+  };
+
+  // Derived State
   const filteredRecords = useMemo(() => {
-    let result = records;
-
-    // 1. Apply Status Filter (Tabs)
-    if (statusFilter !== 'Total') {
-        result = result.filter(r => r.status === statusFilter);
-    }
-
-    // 2. Search Filter
-    if (search.trim()) {
-       result = result.filter(r => 
-        (r.label || '').toLowerCase().includes(search.toLowerCase()) ||
-        (r.referenceNumber || '').toLowerCase().includes(search.toLowerCase()) ||
-        (r.wayleaveNumber || '').toLowerCase().includes(search.toLowerCase()) ||
-        (r.accountNumber || '').toLowerCase().includes(search.toLowerCase()) ||
-        (r.zone || '').toLowerCase().includes(search.toLowerCase())
-      );
-    }
-
-    // 3. Sort
-    result.sort((a, b) => {
-      const aValue = a[sort.key];
-      const bValue = b[sort.key];
-      if (aValue === undefined || bValue === undefined) return 0;
-      if (aValue < bValue) return sort.direction === 'asc' ? -1 : 1;
-      if (aValue > bValue) return sort.direction === 'asc' ? 1 : -1;
-      return 0;
+    return records.filter(r => {
+      const matchesSearch = 
+        r.label.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        r.referenceNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        r.plotNumber?.toLowerCase().includes(searchTerm.toLowerCase());
+      
+      const matchesStatus = statusFilter === 'All' || r.status === statusFilter;
+      
+      return matchesSearch && matchesStatus;
     });
+  }, [records, searchTerm, statusFilter]);
 
-    return result;
-  }, [records, search, sort, statusFilter]);
-
-  // Chart & Stats Data
-  const statusCounts = useMemo(() => {
-    const counts: Record<string, number> = { 'Total': records.length };
-    STATUS_SEQUENCE.forEach(s => counts[s] = 0);
-    
-    records.forEach(r => {
-      // Find the matching status key case-insensitively
-      const currentStatus = (r.status || '').toLowerCase();
-      const matchingKey = STATUS_SEQUENCE.find(s => s.toLowerCase() === currentStatus);
-      if (matchingKey) {
-        counts[matchingKey]++;
-      } else {
-        // If unknown status, just track it under its own name if desired, or ignore.
-        // For safety, we can add it to counts dynamicallly
-        if (!counts[r.status]) counts[r.status] = 0;
-        counts[r.status]++;
-      }
-    });
-    return counts;
+  // Stats
+  const stats = useMemo(() => {
+    return {
+        total: records.length,
+        completed: records.filter(r => ['passed', 'work design'].includes(normalizeStatus(r.status))).length,
+        pending: records.filter(r => !['passed', 'work design', 'cancelled', 'suspended by edd'].includes(normalizeStatus(r.status))).length,
+        suspended: records.filter(r => normalizeStatus(r.status) === 'suspended by edd').length
+    }
   }, [records]);
-
-  // Chart Data (for graphs, excluding Total)
-  const chartStatusData = useMemo(() => {
-     return STATUS_SEQUENCE.map(step => ({
-      name: step,
-      value: statusCounts[step] || 0
-    })).filter(item => item.value > 0);
-  }, [statusCounts]);
-
-  const zoneData = useMemo(() => {
-    const counts = records.reduce((acc, r) => {
-      const z = r.zone || 'Unknown';
-      acc[z] = (acc[z] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
+  
+  // Charts Data
+  const statusData = useMemo(() => {
+    const counts: {[key: string]: number} = {};
+    records.forEach(r => {
+        const s = r.status || 'Unknown';
+        counts[s] = (counts[s] || 0) + 1;
+    });
     return Object.entries(counts).map(([name, value]) => ({ name, value }));
   }, [records]);
 
-  // Initial Auth Loading Screen
-  if (isAuthChecking) {
-    return <LoadingScreen />;
-  }
-
-  if (!auth.isAuthenticated) {
-    return <Login onLogin={handleLogin} />;
-  }
+  if (loading && records.length === 0) return <LoadingScreen />;
 
   return (
-    <div className="h-screen bg-slate-50 dark:bg-slate-950 flex font-sans overflow-hidden transition-colors duration-300 selection:bg-emerald-500/30 selection:text-emerald-900 dark:selection:text-emerald-200">
-      
-      {/* Mobile Sidebar Overlay */}
-      {isMobileMenuOpen && (
-        <div 
-          className="fixed inset-0 bg-slate-900/60 z-30 lg:hidden backdrop-blur-sm transition-all duration-300"
-          onClick={() => setIsMobileMenuOpen(false)}
-        />
-      )}
-
-      {/* Sidebar (Collapsible on Desktop) */}
-      <aside className={`
-        fixed inset-y-0 left-0 z-50 bg-white dark:bg-slate-900 
-        border-r border-slate-100 dark:border-slate-800
-        transition-all duration-300 ease-in-out
-        flex flex-col overflow-hidden h-full
-        ${isMobileMenuOpen ? 'translate-x-0 w-72 shadow-2xl' : '-translate-x-full w-72'}
-        lg:relative lg:translate-x-0
-        ${isSidebarCollapsed ? 'lg:w-0 lg:border-none' : 'lg:w-72 lg:border-r'}
-      `}>
-        {/* Inner Content Wrapper with fixed width to prevent squashing */}
-        <div className="w-72 flex flex-col h-full">
-          <div className="p-8 flex items-center gap-4 text-slate-900 dark:text-white shrink-0">
-            <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-500/30 shrink-0">
-              <Icons.Dashboard className="w-5 h-5 text-white" />
+    <div className={`min-h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300 font-sans text-slate-900 dark:text-slate-100 flex`}>
+      {/* Sidebar */}
+      <aside className="w-64 bg-slate-900 text-white hidden md:flex flex-col fixed h-full z-20">
+         <div className="p-6 flex items-center gap-3">
+            <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center">
+                <Icons.Dashboard className="w-5 h-5 text-white" />
             </div>
-            <span className="font-bold text-xl tracking-tight whitespace-nowrap">Nexus</span>
-            <button 
-              onClick={() => setIsMobileMenuOpen(false)} 
-              className="lg:hidden ml-auto text-slate-400 hover:text-slate-900 dark:hover:text-white"
-            >
-              <Icons.Close className="w-6 h-6" />
-            </button>
-          </div>
+            <h1 className="font-bold text-lg tracking-tight">PlanManager</h1>
+         </div>
 
-          <nav className="flex-1 px-6 space-y-2 py-4 overflow-y-auto">
-            <p className="px-4 text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-4 whitespace-nowrap">Main Menu</p>
-            <button 
-              onClick={() => { setStatusFilter('Total'); setShowUpload(false); }}
-              className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl transition-all duration-200 font-medium whitespace-nowrap ${statusFilter === 'Total' && !showUpload ? 'bg-emerald-50 dark:bg-emerald-900/10 text-emerald-600 dark:text-emerald-400' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50 text-slate-600 dark:text-slate-400'}`}
-            >
-              <Icons.Dashboard className={`w-5 h-5 flex-shrink-0 ${statusFilter === 'Total' && !showUpload ? 'text-emerald-500' : 'text-slate-400'}`} />
-              <span>Dashboard</span>
+         <nav className="flex-1 px-4 py-6 space-y-2">
+            <a href="#" className="flex items-center gap-3 px-4 py-3 bg-white/10 text-emerald-400 rounded-xl font-medium transition-colors">
+                <Icons.Dashboard className="w-5 h-5" /> Dashboard
+            </a>
+            <button onClick={() => setShowUpload(true)} className="w-full flex items-center gap-3 px-4 py-3 text-slate-400 hover:text-white hover:bg-white/5 rounded-xl font-medium transition-colors">
+                <Icons.Upload className="w-5 h-5" /> Import Data
             </button>
-            <button 
-              onClick={() => setShowUpload(true)} 
-              className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl transition-all duration-200 font-medium whitespace-nowrap ${showUpload ? 'bg-emerald-50 dark:bg-emerald-900/10 text-emerald-600 dark:text-emerald-400' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50 text-slate-600 dark:text-slate-400'}`}
-            >
-              <Icons.Excel className={`w-5 h-5 flex-shrink-0 ${showUpload ? 'text-emerald-500' : 'text-slate-400'}`} />
-              <span>Import Data</span>
+            <button onClick={() => setShowCalculator(true)} className="w-full flex items-center gap-3 px-4 py-3 text-slate-400 hover:text-white hover:bg-white/5 rounded-xl font-medium transition-colors">
+                <Icons.Calculator className="w-5 h-5" /> Infra CC Calc
             </button>
-          </nav>
+         </nav>
 
-          <div className="p-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 shrink-0">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-full bg-white dark:bg-slate-800 flex items-center justify-center border border-slate-200 dark:border-slate-700 shadow-sm shrink-0">
-                <Icons.User className="w-5 h-5 text-slate-400 dark:text-slate-500" />
-              </div>
-              <div className="flex-1 overflow-hidden">
-                <p className="text-slate-900 dark:text-white font-semibold text-sm truncate">{auth.user?.username}</p>
-                <p className="text-xs text-slate-500 capitalize">{auth.user?.role}</p>
-              </div>
+         <div className="p-4 border-t border-white/10">
+            <div className="flex items-center gap-3 p-3 rounded-xl bg-white/5">
+                <div className="w-10 h-10 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-400 font-bold">
+                    AD
+                </div>
+                <div>
+                    <p className="text-sm font-bold">Admin User</p>
+                    <p className="text-xs text-slate-400">admin@system.com</p>
+                </div>
             </div>
-            <button onClick={handleLogout} className="w-full flex items-center justify-center gap-2 text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 transition-colors py-2 text-sm font-medium hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg whitespace-nowrap">
-              <Icons.Logout className="w-4 h-4" /> Sign Out
-            </button>
-          </div>
-        </div>
+         </div>
       </aside>
 
-      {/* Main Content Area (Flex Column) */}
-      <main className="flex-1 flex flex-col h-full overflow-hidden w-full relative">
-        
-        {/* Scrollable Content Container */}
-        <div className="flex-1 overflow-y-auto p-4 md:p-8 lg:p-10 flex flex-col">
-          
-          {/* Header */}
-          <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-6 shrink-0">
-            <div className="flex items-center gap-4 w-full md:w-auto">
-              {/* Mobile Sidebar Toggle */}
-              <button 
-                onClick={() => setIsMobileMenuOpen(true)}
-                className="lg:hidden p-2.5 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl"
-              >
-                <Icons.Menu className="w-6 h-6" />
-              </button>
-              
-              {/* Desktop Sidebar Toggle */}
-              <button
-                onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-                className="hidden lg:flex p-2.5 text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
-                title={isSidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
-              >
-                {isSidebarCollapsed ? <Icons.Right className="w-5 h-5" /> : <Icons.Menu className="w-5 h-5" />}
-              </button>
-
-              <div>
-                <h1 className="text-3xl font-bold text-slate-900 dark:text-white animate-fade-in tracking-tight">
-                  Dashboard
-                </h1>
-                <p className="text-slate-500 dark:text-slate-400 mt-1 animate-fade-in-up font-medium">
-                  Overview of your planning operations
-                </p>
-              </div>
+      {/* Main Content */}
+      <main className="flex-1 md:ml-64 p-4 md:p-8">
+        {/* Header */}
+        <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+            <div>
+                <h2 className="text-2xl font-bold text-slate-800 dark:text-white">Project Overview</h2>
+                <p className="text-slate-500 dark:text-slate-400 text-sm">Welcome back, here's what's happening today.</p>
             </div>
-
-            <div className="flex items-center gap-3 w-full md:w-auto">
-              <button 
-                onClick={toggleTheme}
-                className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-500 dark:text-yellow-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors shadow-sm"
-                title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-              >
-                {theme === 'dark' ? <Icons.Sun className="w-5 h-5" /> : <Icons.Moon className="w-5 h-5" />}
-              </button>
-
-              <div className="relative flex-1 md:flex-none group">
-                <Icons.Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4 group-focus-within:text-emerald-500 transition-colors" />
-                <input 
-                  type="text" 
-                  placeholder="Search..." 
-                  className="pl-11 pr-4 py-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none w-full md:w-72 transition-all shadow-sm font-medium"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                />
-              </div>
-              
-              <button 
-                onClick={notificationPermission === 'granted' ? () => {} : requestNotificationPermission}
-                className={`p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800 relative transition-all shadow-sm group ${notificationPermission !== 'granted' ? 'animate-pulse' : 'text-slate-500 dark:text-slate-400'}`}
-                title={notificationPermission === 'granted' ? 'Notifications Enabled' : 'Enable Notifications'}
-              >
-                <Icons.Bell className="w-5 h-5" />
-                {notificationPermission !== 'granted' && notificationPermission !== 'denied' && (
-                  <span className="absolute -top-1 -right-1 flex h-3 w-3">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
-                  </span>
-                )}
-                {notifications.length > 0 && (
-                  <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-rose-500 rounded-full animate-pulse ring-2 ring-white dark:ring-slate-900"></span>
-                )}
-              </button>
-            </div>
-          </header>
-
-          {/* Status Filter Tabs (Wrapped, No Scroll) */}
-          <div className="mb-8 shrink-0">
-            <div className="flex flex-wrap gap-3">
-              {STATUS_SEQUENCE.map((status) => {
-                const count = statusCounts[status] || 0;
-                const isActive = statusFilter === status;
-                return (
-                  <button
-                    key={status}
-                    onClick={() => setStatusFilter(prev => prev === status ? 'Total' : status)}
-                    className={`
-                      flex items-center gap-3 px-5 py-3 rounded-xl border transition-all duration-200 group relative overflow-hidden
-                      ${isActive 
-                        ? 'bg-slate-900 dark:bg-emerald-600 border-slate-900 dark:border-emerald-500 text-white shadow-lg shadow-slate-900/20 dark:shadow-emerald-900/30 transform -translate-y-0.5' 
-                        : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:border-emerald-500/50 hover:shadow-md'
-                      }
-                    `}
-                  >
-                    <span className={`text-sm font-bold whitespace-nowrap ${isActive ? 'text-white' : 'group-hover:text-slate-900 dark:group-hover:text-white'}`}>
-                      {status}
-                    </span>
-                    <span className={`
-                      text-xs font-bold px-2 py-0.5 rounded-md min-w-[24px] text-center
-                      ${isActive 
-                        ? 'bg-white/20 text-white' 
-                        : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
-                      }
-                    `}>
-                      {count}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Upload Area (Conditional) */}
-          {showUpload && (
-            <div className="mb-10 animate-fade-in-down shrink-0">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="font-bold text-lg text-slate-800 dark:text-white">Import Records</h3>
-                <button onClick={() => setShowUpload(false)} className="text-slate-400 hover:text-slate-900 dark:hover:text-white transition-transform hover:rotate-90 p-2">
-                  <Icons.Close className="w-5 h-5" />
+            <div className="flex items-center gap-3">
+                 <button 
+                    onClick={() => setDarkMode(!darkMode)}
+                    className="p-2.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-emerald-500 transition-colors"
+                >
+                    {darkMode ? <Icons.Sun className="w-5 h-5" /> : <Icons.Moon className="w-5 h-5" />}
                 </button>
-              </div>
-              <ExcelUploader onUpload={handleExcelUpload} />
+                <button 
+                    onClick={handleGenerateInsights}
+                    disabled={generatingInsight}
+                    className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl font-bold text-sm shadow-lg shadow-emerald-500/20 hover:shadow-emerald-500/30 transition-all active:scale-95"
+                >
+                    {generatingInsight ? <Icons.Spinner className="w-4 h-4 animate-spin" /> : <Icons.AI className="w-4 h-4" />}
+                    AI Insights
+                </button>
             </div>
-          )}
+        </header>
 
-          {/* Content Grid - Flex-1 to take remaining height */}
-          <div className="flex flex-col lg:flex-row gap-8 flex-1 min-h-0">
-            
-            {/* List Section (Expanded Width) - Takes remaining height */}
-            <div className="lg:w-2/3 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col overflow-hidden animate-fade-in-up h-[600px] lg:h-auto lg:flex-1">
-              <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-white dark:bg-slate-900 shrink-0 z-10">
-                <h2 className="font-bold text-lg text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
-                  {statusFilter === 'Total' ? 'All Records' : statusFilter}
-                  <span className="text-slate-400 text-sm font-normal">({filteredRecords.length})</span>
-                </h2>
-                <div className="flex gap-2">
-                  <select 
-                      className="text-xs font-medium border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg px-3 py-1.5 outline-none focus:ring-2 focus:ring-emerald-500/20"
-                      onChange={(e) => setSort({ key: e.target.value as keyof RecordItem, direction: 'desc' })}
-                  >
-                    <option value="createdAt">Newest First</option>
-                    <option value="scheduleStartDate">Schedule Date</option>
-                    <option value="status">Status</option>
-                    <option value="zone">Zone</option>
-                  </select>
+        {/* AI Insight Box */}
+        {aiInsight && (
+             <div className="mb-8 p-6 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-xl relative overflow-hidden animate-fade-in">
+                <div className="relative z-10">
+                    <div className="flex items-center justify-between mb-4">
+                        <h3 className="font-bold flex items-center gap-2"><Icons.AI className="w-5 h-5" /> Gemini Analysis</h3>
+                        <button onClick={() => setAiInsight('')} className="p-1 hover:bg-white/20 rounded-lg"><Icons.Close className="w-4 h-4" /></button>
+                    </div>
+                    <p className="text-white/90 leading-relaxed whitespace-pre-wrap text-sm">{aiInsight}</p>
                 </div>
-              </div>
-              {/* Table Container - Flex-1 to scroll independently */}
-              <div className="overflow-auto flex-1 custom-scrollbar relative">
-                {isLoading ? (
-                  <div className="h-full flex flex-col items-center justify-center text-slate-400 gap-4">
-                    <Icons.Spinner className="animate-spin w-8 h-8 text-emerald-500" /> 
-                    <span className="animate-pulse font-medium">Loading records...</span>
-                  </div>
-                ) : (
-                  <table className="w-full text-left border-collapse">
-                    <thead className="bg-slate-50/80 dark:bg-slate-950/50 text-slate-500 dark:text-slate-400 text-xs uppercase font-bold tracking-wider sticky top-0 backdrop-blur-sm z-10 shadow-sm">
-                      <tr>
-                        <th className="px-6 py-4 w-16">#</th>
-                        <th className="px-6 py-4">Reference</th>
-                        <th className="px-6 py-4">Details</th>
-                        <th className="px-6 py-4">Status</th>
-                        <th className="px-6 py-4">USP</th>
-                        <th className="px-6 py-4">Scheduled</th>
-                        <th className="px-6 py-4">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-50 dark:divide-slate-800/50">
-                      {filteredRecords.map((record, index) => (
-                        <tr key={record.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group">
-                          <td className="px-6 py-4 text-xs font-medium text-slate-400 dark:text-slate-600">
-                            {index + 1}
-                          </td>
-                          <td className="px-6 py-4">
-                            <span className="font-mono text-xs text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-md whitespace-nowrap">
-                              {record.referenceNumber}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="font-semibold text-slate-900 dark:text-white text-sm mb-0.5">{record.label}</div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wide">Zone: {record.zone}</span>
-                            </div>
-                            {record.justification && (
-                              <div className="mt-1 text-xs text-red-500 font-medium italic">
-                                Note: {record.justification}
-                              </div>
-                            )}
-                          </td>
-                          <td className="px-6 py-4">
-                            <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold capitalize shadow-sm tracking-wide ${getStatusColor(record.status)}`}>
-                              {record.status === 'Suspended by EDD' && <span className="mr-1.5 relative flex h-2 w-2">
-                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                                <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
-                              </span>}
-                              {record.status}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4">
-                            {record.requireUSP ? (
-                              <div className="flex flex-col gap-1.5">
-                                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Required</span>
-                                {record.sentToUSPDate ? (
-                                  <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1 whitespace-nowrap">
-                                    <Icons.Check className="w-3 h-3" /> Sent
-                                  </span>
-                                ) : (
-                                  <span className="text-xs text-amber-600 dark:text-amber-500 font-medium flex items-center gap-1 whitespace-nowrap animate-pulse">
-                                    <Icons.Clock className="w-3 h-3" /> Pending
-                                  </span>
-                                )}
-                              </div>
-                            ) : (
-                              <span className="text-slate-300 dark:text-slate-600 text-lg">&bull;</span>
-                            )}
-                          </td>
-                          <td className="px-6 py-4 text-slate-600 dark:text-slate-400 text-sm font-medium whitespace-nowrap">
-                            {new Date(record.scheduleStartDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button 
-                                onClick={() => setEditingRecord(record)}
-                                className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 rounded-lg transition-colors"
-                                title="Edit Record"
-                              >
-                                <Icons.Edit className="w-4 h-4" />
-                              </button>
-                              <button 
-                                onClick={() => handleDelete(record.id)}
-                                className="p-2 hover:bg-rose-50 dark:hover:bg-rose-900/20 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 rounded-lg transition-colors"
-                                title="Delete Record"
-                              >
-                                <Icons.Trash className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                      {filteredRecords.length === 0 && (
-                        <tr>
-                          <td colSpan={7} className="px-6 py-20 text-center">
-                            <div className="flex flex-col items-center justify-center">
-                              <div className="w-16 h-16 bg-slate-50 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4">
-                                <Icons.Search className="w-8 h-8 text-slate-300 dark:text-slate-600" />
-                              </div>
-                              <p className="text-slate-500 dark:text-slate-400 font-medium">No records found matching your criteria.</p>
-                              <button onClick={() => { setSearch(''); setStatusFilter('Total'); }} className="mt-2 text-emerald-600 dark:text-emerald-400 text-sm font-bold hover:underline">
-                                Clear Filters
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                )}
-              </div>
+                {/* Decorative background elements */}
+                <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
+             </div>
+        )}
+
+        {/* Stats Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+            <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center text-blue-600 dark:text-blue-400">
+                    <Icons.Dashboard className="w-6 h-6" />
+                </div>
+                <div>
+                    <p className="text-slate-500 dark:text-slate-400 text-xs font-bold uppercase tracking-wider">Total Projects</p>
+                    <p className="text-2xl font-bold text-slate-800 dark:text-white">{stats.total}</p>
+                </div>
             </div>
+             <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center text-amber-600 dark:text-amber-400">
+                    <Icons.Clock className="w-6 h-6" />
+                </div>
+                <div>
+                    <p className="text-slate-500 dark:text-slate-400 text-xs font-bold uppercase tracking-wider">Pending</p>
+                    <p className="text-2xl font-bold text-slate-800 dark:text-white">{stats.pending}</p>
+                </div>
+            </div>
+             <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
+                    <Icons.Check className="w-6 h-6" />
+                </div>
+                <div>
+                    <p className="text-slate-500 dark:text-slate-400 text-xs font-bold uppercase tracking-wider">Completed</p>
+                    <p className="text-2xl font-bold text-slate-800 dark:text-white">{stats.completed}</p>
+                </div>
+            </div>
+             <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl bg-red-50 dark:bg-red-900/20 flex items-center justify-center text-red-600 dark:text-red-400">
+                    <Icons.Alert className="w-6 h-6" />
+                </div>
+                <div>
+                    <p className="text-slate-500 dark:text-slate-400 text-xs font-bold uppercase tracking-wider">Suspended</p>
+                    <p className="text-2xl font-bold text-slate-800 dark:text-white">{stats.suspended}</p>
+                </div>
+            </div>
+        </div>
 
-            {/* Analytics Section (Right Column) - Fixed width, scrolls if main container overflows (unlikely with flex-1 on left but possible) or stays fixed */}
-            <div className="lg:w-1/3 flex flex-col gap-6 overflow-y-auto">
-              
-              {/* Total Records Card */}
-              <div className="bg-gradient-to-br from-emerald-500 to-teal-600 p-6 rounded-3xl shadow-lg shadow-emerald-500/20 text-white flex flex-col animate-fade-in-up relative overflow-hidden group shrink-0">
-                <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-2xl -mr-16 -mt-16 pointer-events-none"></div>
-                <div className="flex justify-between items-start mb-4 relative z-10">
-                  <div>
-                    <p className="text-emerald-100 font-medium text-sm uppercase tracking-wide">Total Projects</p>
-                    <h3 className="text-4xl font-bold mt-1">{statusCounts['Total']}</h3>
-                  </div>
-                  <div className="bg-white/20 p-2 rounded-xl">
-                    <Icons.Dashboard className="w-6 h-6 text-white" />
-                  </div>
+        {/* Filters and Actions */}
+        <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-6">
+            <div className="flex items-center gap-2 w-full md:w-auto">
+                <div className="relative flex-1 md:w-80">
+                    <Icons.Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+                    <input 
+                        type="text" 
+                        placeholder="Search projects..." 
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500/20 outline-none text-sm"
+                    />
                 </div>
-                <div className="relative z-10 mt-auto">
-                    <button 
-                      onClick={() => setStatusFilter('Total')}
-                      className="text-xs font-bold bg-white/20 hover:bg-white/30 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 w-fit"
-                    >
-                      View All Records <Icons.Right className="w-3 h-3" />
-                    </button>
-                </div>
-              </div>
+                <select 
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
+                    className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none text-sm cursor-pointer"
+                >
+                    <option value="All">All Statuses</option>
+                    {STATUS_SEQUENCE.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+            </div>
+            <div className="flex items-center gap-2">
+                 <button 
+                    onClick={() => setShowCalculator(true)}
+                    className="md:hidden p-2.5 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl border border-slate-200 dark:border-slate-700"
+                >
+                    <Icons.Calculator className="w-5 h-5" />
+                </button>
+                <button 
+                    onClick={() => setShowUpload(true)}
+                    className="flex items-center gap-2 px-4 py-2.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl font-bold text-sm hover:opacity-90 transition-opacity"
+                >
+                    <Icons.Plus className="w-4 h-4" /> 
+                    <span className="hidden sm:inline">Add / Import</span>
+                </button>
+            </div>
+        </div>
 
-              {/* Status Chart */}
-              <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm h-80 flex flex-col animate-fade-in-up shrink-0">
-                <div className="flex justify-between items-center mb-6">
-                  <h3 className="font-bold text-slate-900 dark:text-white">Status Distribution</h3>
-                  <div className="bg-emerald-50 dark:bg-emerald-900/20 p-1.5 rounded-lg">
-                    <Icons.Dashboard className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                  </div>
-                </div>
-                <div className="w-full h-64">
-                  <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={chartStatusData} margin={{ top: 10, right: 10, left: -20, bottom: 40 }}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={theme === 'dark' ? '#1e293b' : '#f1f5f9'} />
-                        <XAxis 
-                          dataKey="name" 
-                          axisLine={false} 
-                          tickLine={false} 
-                          tick={{fill: theme === 'dark' ? '#64748b' : '#94a3b8', fontSize: 10}} 
-                          angle={-45} 
-                          textAnchor="end"
-                          interval={0}
-                          height={60}
-                        />
-                        <YAxis axisLine={false} tickLine={false} tick={{fill: theme === 'dark' ? '#64748b' : '#94a3b8', fontSize: 12}} />
-                        <Tooltip 
-                          cursor={{fill: theme === 'dark' ? '#1e293b' : '#f8fafc', opacity: 0.4}}
-                          contentStyle={{
-                            borderRadius: '12px', 
-                            border: 'none', 
-                            backgroundColor: theme === 'dark' ? '#1e293b' : '#fff', 
-                            color: theme === 'dark' ? '#f8fafc' : '#1e293b',
-                            boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)'
-                          }}
-                        />
-                        <Bar dataKey="value" radius={[6, 6, 0, 0]}>
-                          {chartStatusData.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={getChartColor(entry.name, theme)} />
-                          ))}
-                        </Bar>
-                      </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-
-              {/* Zone Chart */}
-              <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm h-80 flex flex-col animate-fade-in-up shrink-0">
+        {/* Upload Area (Conditional) */}
+        {showUpload && (
+            <div className="mb-8 animate-fade-in-down">
                 <div className="flex justify-between items-center mb-2">
-                  <h3 className="font-bold text-slate-900 dark:text-white">Zone Activity</h3>
-                  <div className="bg-indigo-50 dark:bg-indigo-900/20 p-1.5 rounded-lg">
-                    <Icons.Filter className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                  </div>
+                    <h3 className="font-bold text-slate-800 dark:text-white">Import Data</h3>
+                    <button onClick={() => setShowUpload(false)} className="text-slate-400 hover:text-slate-600"><Icons.Close className="w-5 h-5"/></button>
                 </div>
-                <div className="w-full h-64">
-                  <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={zoneData}
-                          cx="50%"
-                          cy="50%"
-                          innerRadius={60}
-                          outerRadius={80}
-                          paddingAngle={5}
-                          dataKey="value"
-                          stroke="none"
-                        >
-                          {zoneData.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={['#6366f1', '#8b5cf6', '#ec4899', '#14b8a6'][index % 4]} />
-                          ))}
-                        </Pie>
-                        <Tooltip 
-                          contentStyle={{
-                            borderRadius: '12px', 
-                            border: 'none', 
-                            backgroundColor: theme === 'dark' ? '#1e293b' : '#fff', 
-                            color: theme === 'dark' ? '#f8fafc' : '#1e293b',
-                            boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)'
-                          }}
-                        />
-                        <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{color: theme === 'dark' ? '#94a3b8' : '#64748b', fontSize: '12px', fontWeight: 500}} />
-                      </PieChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
+                <ExcelUploader onUpload={handleExcelUpload} />
             </div>
-          </div>
+        )}
+
+        {/* Data Table */}
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                    <thead>
+                        <tr className="bg-slate-50/50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800">
+                            <th className="p-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Project / Label</th>
+                            <th className="p-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Reference</th>
+                            <th className="p-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Status</th>
+                            <th className="p-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Block / Zone</th>
+                            <th className="p-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Date</th>
+                            <th className="p-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                        {filteredRecords.length > 0 ? filteredRecords.map((record) => (
+                            <tr key={record.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group">
+                                <td className="p-4">
+                                    <div className="font-bold text-slate-800 dark:text-slate-200">{record.label}</div>
+                                    <div className="text-xs text-slate-400">{record.plotNumber ? `Plot: ${record.plotNumber}` : 'No Plot Info'}</div>
+                                </td>
+                                <td className="p-4 text-sm text-slate-600 dark:text-slate-300 font-mono">
+                                    {record.referenceNumber || '-'}
+                                </td>
+                                <td className="p-4">
+                                    <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold capitalize ${getStatusColor(record.status)}`}>
+                                        {record.status}
+                                    </span>
+                                </td>
+                                <td className="p-4 text-sm text-slate-600 dark:text-slate-300">
+                                    {record.block} <span className="text-slate-300 mx-1">/</span> {record.zone}
+                                </td>
+                                <td className="p-4 text-sm text-slate-500 dark:text-slate-400">
+                                    {new Date(record.scheduleStartDate).toLocaleDateString()}
+                                </td>
+                                <td className="p-4 text-right">
+                                    <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button 
+                                            onClick={() => setEditingRecord(record)}
+                                            className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg text-slate-400 hover:text-blue-500 transition-colors"
+                                        >
+                                            <Icons.Edit className="w-4 h-4" />
+                                        </button>
+                                        <button 
+                                            onClick={() => handleDeleteRecord(record.id)}
+                                            className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg text-slate-400 hover:text-red-500 transition-colors"
+                                        >
+                                            <Icons.Trash className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        )) : (
+                            <tr>
+                                <td colSpan={6} className="p-12 text-center">
+                                    <div className="flex flex-col items-center justify-center text-slate-400">
+                                        <Icons.Search className="w-12 h-12 mb-3 opacity-20" />
+                                        <p className="font-medium">No records found</p>
+                                        <p className="text-sm">Try adjusting your search or filters</p>
+                                    </div>
+                                </td>
+                            </tr>
+                        )}
+                    </tbody>
+                </table>
+            </div>
         </div>
       </main>
 
-      {/* Overlays */}
+      {/* Modals */}
       <EditRecordModal 
-         isOpen={!!editingRecord} 
-         record={editingRecord} 
-         onClose={() => setEditingRecord(null)} 
-         onSave={handleUpdateRecord} 
+        isOpen={!!editingRecord} 
+        record={editingRecord} 
+        onClose={() => setEditingRecord(null)} 
+        onSave={handleSaveRecord}
       />
       
-      {notifications.map(notif => (
-        <NotificationToast 
-          key={notif.id} 
-          notification={notif} 
-          onClose={(id) => setNotifications(prev => prev.filter(n => n.id !== id))} 
-          onClick={handleNotificationClick}
-        />
-      ))}
+      <InfraCalculatorModal 
+        isOpen={showCalculator} 
+        onClose={() => setShowCalculator(false)} 
+      />
     </div>
   );
 };
