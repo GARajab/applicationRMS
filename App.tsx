@@ -150,9 +150,12 @@ const InfraCalculatorModal: React.FC<{ isOpen: boolean; onClose: () => void }> =
   const loadReferences = async () => {
       setIsLoadingReferences(true);
       const data = await getInfraReferences();
-      // Flatten for search component compatibility
-      // The local search logic expects a simple object per row.
-      const flattened = data.map(item => ({ ...item.details, _dbId: item.id }));
+      // Flatten for search component compatibility and include _searchablePlot for robust searching
+      const flattened = data.map(item => ({ 
+          ...item.details, 
+          _dbId: item.id,
+          _searchablePlot: item.plotNumber 
+      }));
       setReferenceData(flattened);
       if (data.length > 0) {
           setFileName('Database Loaded');
@@ -231,9 +234,16 @@ const InfraCalculatorModal: React.FC<{ isOpen: boolean; onClose: () => void }> =
     if (!plotSearch.trim() || referenceData.length === 0) return null;
     const term = plotSearch.trim().toLowerCase();
     
-    // Priority: Look for a specific 'Plot' column first
+    // 1. Prioritize index-based search from database plot number
+    const dbExact = referenceData.find(row => String(row._searchablePlot || '').trim().toLowerCase() === term);
+    if (dbExact) return dbExact;
+
+    const dbPartial = referenceData.find(row => String(row._searchablePlot || '').trim().toLowerCase().includes(term));
+    if (dbPartial) return dbPartial;
+
+    // 2. Fallback: Priority Look for a specific 'Plot' column within details
     const firstRow = referenceData[0] || {};
-    const keys = Object.keys(firstRow).filter(k => k !== '_dbId');
+    const keys = Object.keys(firstRow).filter(k => !k.startsWith('_'));
     const plotKey = keys.find(k => k.toLowerCase().includes('plot') || k.toLowerCase().includes('plot no') || k.toLowerCase().includes('parcel'));
     
     if (plotKey) {
@@ -244,7 +254,7 @@ const InfraCalculatorModal: React.FC<{ isOpen: boolean; onClose: () => void }> =
         return referenceData.find(row => String(row[plotKey]).trim().toLowerCase().includes(term));
     }
     
-    // Fallback: Check all values for exact match then partial
+    // 3. Fallback: Check all values for exact match then partial
     const exact = referenceData.find(row => Object.values(row).some(val => String(val).trim().toLowerCase() === term));
     if (exact) return exact;
     
@@ -417,7 +427,7 @@ const InfraCalculatorModal: React.FC<{ isOpen: boolean; onClose: () => void }> =
                         {searchResult ? (
                             <div className="space-y-3">
                                 {Object.entries(searchResult).map(([key, value]) => {
-                                    if (key === '_dbId') return null; // Skip internal ID
+                                    if (key.startsWith('_')) return null; // Skip internal keys like _dbId and _searchablePlot
                                     return (
                                         <div key={key} className="flex flex-col border-b border-slate-50 dark:border-slate-800 pb-2 last:border-0 last:pb-0">
                                             <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider mb-0.5">{key}</span>
@@ -913,10 +923,7 @@ const App: React.FC = () => {
   // Initial Load
   useEffect(() => {
     loadRecords();
-    // Check system preference
-    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-      setDarkMode(true);
-    }
+    // Default to light mode (removed dark mode check)
   }, []);
 
   // Toggle Dark Mode class on html element
