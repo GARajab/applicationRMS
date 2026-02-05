@@ -3,7 +3,7 @@ import { Icons } from './components/Icons';
 import * as XLSX from 'xlsx';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend } from 'recharts';
 import { RecordItem, User, AuthState, Notification as AppNotification, NotificationType, SortConfig, InfraReferenceItem } from './types';
-import { getRecords, addRecord, deleteRecord, updateRecord, searchInfraReferences, saveInfraReferences, clearInfraReferences, getInfraStats } from './services/storageService';
+import { getRecords, addRecord, deleteRecord, updateRecord, searchInfraReferences, saveInfraReferences, clearInfraReferences, getInfraStats, getPaidPlotNumbers } from './services/storageService';
 import { generateDataInsights, generateRecordReport } from './services/geminiService';
 import { supabase } from './services/supabaseClient';
 
@@ -830,6 +830,7 @@ const App: React.FC = () => {
   const [editingRecord, setEditingRecord] = useState<RecordItem | null>(null);
   const [aiInsight, setAiInsight] = useState('');
   const [generatingInsight, setGeneratingInsight] = useState(false);
+  const [paidPlots, setPaidPlots] = useState<Set<string>>(new Set());
 
   useEffect(() => { loadRecords(); }, []);
   useEffect(() => { 
@@ -839,7 +840,16 @@ const App: React.FC = () => {
 
   const loadRecords = async () => {
     setLoading(true);
-    setRecords(await getRecords());
+    const data = await getRecords();
+    setRecords(data);
+    
+    // Check payment status for all loaded records
+    const plots = data.map(r => r.plotNumber).filter(Boolean) as string[];
+    if (plots.length > 0) {
+      const paid = await getPaidPlotNumbers(plots);
+      setPaidPlots(paid);
+    }
+    
     setLoading(false);
   };
 
@@ -992,14 +1002,34 @@ const App: React.FC = () => {
                 <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden">
                     <table className="w-full text-left">
                         <thead className="bg-slate-50 dark:bg-slate-800/50 text-xs font-bold text-slate-500 uppercase">
-                            <tr><th className="p-4">Project</th><th className="p-4">Ref</th><th className="p-4">Status</th><th className="p-4">Loc</th><th className="p-4">Date</th><th className="p-4 text-right">Actions</th></tr>
+                            <tr>
+                              <th className="p-4">Project</th>
+                              <th className="p-4">Plot</th>
+                              <th className="p-4">Ref</th>
+                              <th className="p-4">Status</th>
+                              <th className="p-4">Loc</th>
+                              <th className="p-4">Date</th>
+                              <th className="p-4 text-right">Actions</th>
+                            </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                             {filteredRecords.length > 0 ? filteredRecords.map(r => (
                                 <tr key={r.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 group">
                                     <td className="p-4">
-                                        <div className="font-bold">{r.label}</div>
-                                        <div className="text-xs text-slate-400">{r.plotNumber ? `Plot: ${r.plotNumber}` : ''}</div>
+                                        <div className="font-bold flex items-center gap-2">
+                                          {r.label}
+                                          {r.plotNumber && paidPlots.has(r.plotNumber) && (
+                                            <div className="relative group/tooltip">
+                                              <Icons.CreditCard className="w-4 h-4 text-amber-500 animate-pulse" />
+                                              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-slate-800 text-white text-xs rounded opacity-0 group-hover/tooltip:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+                                                Fees Paid
+                                              </span>
+                                            </div>
+                                          )}
+                                        </div>
+                                    </td>
+                                    <td className="p-4 font-mono text-sm font-semibold text-slate-600 dark:text-slate-300">
+                                      {r.plotNumber || '-'}
                                     </td>
                                     <td className="p-4 font-mono text-sm">{r.referenceNumber || '-'}</td>
                                     <td className="p-4"><span className={`px-2.5 py-1 rounded-full text-xs font-bold capitalize ${getStatusColor(r.status)}`}>{r.status}</span></td>
@@ -1010,7 +1040,7 @@ const App: React.FC = () => {
                                         <button onClick={() => handleDeleteRecord(r.id)} className="p-2 hover:bg-slate-100 rounded-lg text-red-500"><Icons.Trash className="w-4 h-4" /></button>
                                     </td>
                                 </tr>
-                            )) : <tr><td colSpan={6} className="p-12 text-center text-slate-400">No records found</td></tr>}
+                            )) : <tr><td colSpan={7} className="p-12 text-center text-slate-400">No records found</td></tr>}
                         </tbody>
                     </table>
                 </div>

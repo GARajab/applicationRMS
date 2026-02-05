@@ -103,6 +103,42 @@ export const deleteRecord = async (id: string): Promise<boolean> => {
 
 // --- Infra References Methods ---
 
+// Batch check for payment status
+export const getPaidPlotNumbers = async (plotNumbers: string[]): Promise<Set<string>> => {
+  // Filter out empty/null
+  const validPlots = [...new Set(plotNumbers.filter(p => p && p.trim() !== ''))];
+  if (validPlots.length === 0) return new Set();
+
+  const paidPlots = new Set<string>();
+  const chunkSize = 200; // avoid URL too long errors
+
+  for (let i = 0; i < validPlots.length; i += chunkSize) {
+    const chunk = validPlots.slice(i, i + chunkSize);
+    
+    // We check if row exists with plotNumber match AND has at least one payment date field populated
+    const { data, error } = await supabase
+      .from('infra_references')
+      .select('plotNumber, initialPaymentDate, secondPayment, thirdPayment')
+      .in('plotNumber', chunk);
+
+    if (error) {
+      console.error('Error checking paid plots:', error);
+      continue;
+    }
+
+    if (data) {
+      data.forEach((row: any) => {
+        // Consider it paid if any payment date field is truthy
+        if (row.initialPaymentDate || row.secondPayment || row.thirdPayment) {
+          paidPlots.add(row.plotNumber);
+        }
+      });
+    }
+  }
+
+  return paidPlots;
+};
+
 // Changed to search ONLY when requested to handle large datasets
 export const searchInfraReferences = async (plotNumber: string): Promise<InfraReferenceItem[]> => {
   if (!plotNumber) return [];

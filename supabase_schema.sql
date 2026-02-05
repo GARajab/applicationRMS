@@ -176,3 +176,12 @@ CREATE POLICY "Allow full access to infra_references for public users" ON public
     FOR ALL
     USING (true)
     WITH CHECK (true);
+
+-- =========================================================
+-- REQUESTED SQL TO RESET RECORDS AND ADD PLOT NUMBER
+-- Run the following commands in your SQL Editor to apply:
+-- =========================================================
+
+-- TRUNCATE TABLE public.records;
+-- ALTER TABLE public.records ADD COLUMN IF NOT EXISTS "plotNumber" TEXT;
+
