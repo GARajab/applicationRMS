@@ -354,7 +354,7 @@ const InfraCalculatorPage: React.FC = () => {
                  </div>
             ) : searchResult ? (
                 <div className="space-y-4 animate-fade-in-up">
-                    {paymentAlerts.length > 0 && (
+                    {paymentAlerts.length > 0 ? (
                         <div className="mb-4 p-4 rounded-xl bg-gradient-to-r from-amber-100 to-orange-100 dark:from-amber-900/40 dark:to-orange-900/40 border border-amber-200 dark:border-amber-700/50 shadow-lg animate-pulse">
                             <div className="flex items-center gap-3">
                                 <div className="p-2 bg-amber-500 text-white rounded-lg animate-bounce shadow-md">
@@ -369,6 +369,20 @@ const InfraCalculatorPage: React.FC = () => {
                                             </span>
                                         ))}
                                     </div>
+                                </div>
+                            </div>
+                        </div>
+                    ) : (
+                         <div className="mb-4 p-4 rounded-xl bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border border-blue-200 dark:border-blue-800 shadow-lg animate-slide-in-right">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 bg-blue-500 text-white rounded-lg shadow-md">
+                                    <Icons.Alert className="w-5 h-5" />
+                                </div>
+                                <div>
+                                    <h4 className="font-bold text-blue-900 dark:text-blue-100 text-sm uppercase tracking-wider">No Payment History</h4>
+                                    <p className="text-xs text-blue-700 dark:text-blue-300 mt-1 font-medium">
+                                        No prior payments recorded for this plot.
+                                    </p>
                                 </div>
                             </div>
                         </div>
