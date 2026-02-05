@@ -42,3 +42,47 @@ export const generateDataInsights = async (records: RecordItem[], query?: string
     return "Failed to generate insights. Please try again later.";
   }
 };
+
+export const generateRecordReport = async (record: RecordItem): Promise<string> => {
+  const apiKey = process.env.API_KEY;
+
+  if (!apiKey) {
+    return "API Key is missing. Cannot generate AI report.";
+  }
+
+  try {
+    const ai = new GoogleGenAI({ apiKey });
+    
+    // Provide a rich context for the report
+    const prompt = `
+      You are an intelligent AI assistant for the 'Nexus Record Manager' system.
+      The user has requested a full status report for a specific project.
+      
+      Below is the raw data for the project record:
+      ${JSON.stringify(record, null, 2)}
+      
+      Please generate a **Professional Project Status Report**.
+      
+      The report should be formatted cleanly (you can use Markdown for bolding, lists, etc.) and include the following sections where data is available:
+      
+      1.  **Executive Summary**: Project Name (${record.label}), Reference Number, and ID.
+      2.  **Current Status**: Clearly state the current Status (${record.status}). If the status is 'Suspended' or 'Redesign', emphasize this.
+      3.  **Location & Identification**: Block, Zone, Plot Number, and Road/Building details.
+      4.  **Timeline**: Application Date, Schedule Start Date, and any other relevant dates.
+      5.  **Technical & Financial**: Wayleave No., Account No., Load (${record.momaaLoad}), Fees Status.
+      6.  **Remarks / Outstanding Issues**: detailed analysis of any Justification, Error Logs, or missing critical info (like USP requirements).
+      
+      Tone: Professional, informative, and direct.
+    `;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: prompt,
+    });
+
+    return response.text || "No report generated.";
+  } catch (error) {
+    console.error("Gemini API Error:", error);
+    return "Failed to generate report due to an API error. Please try again.";
+  }
+};

@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Icons } from './components/Icons';
 import * as XLSX from 'xlsx';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend } from 'recharts';
 import { RecordItem, User, AuthState, Notification as AppNotification, NotificationType, SortConfig, InfraReferenceItem } from './types';
 import { getRecords, addRecord, deleteRecord, updateRecord, searchInfraReferences, saveInfraReferences, clearInfraReferences, getInfraStats } from './services/storageService';
-import { generateDataInsights } from './services/geminiService';
+import { generateDataInsights, generateRecordReport } from './services/geminiService';
 import { supabase } from './services/supabaseClient';
 
 // --- Constants ---
@@ -79,6 +79,163 @@ const LoadingScreen: React.FC = () => (
     </div>
   </div>
 );
+
+// --- Chat Page Component ---
+interface ChatMessage {
+  id: string;
+  role: 'user' | 'bot';
+  content: string;
+  timestamp: number;
+}
+
+const ChatPage: React.FC<{ records: RecordItem[] }> = ({ records }) => {
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    {
+      id: 'welcome',
+      role: 'bot',
+      content: 'Hello! I am your AI Project Assistant. Please provide a **Project Number**, Reference, Plot Number, or Application Number, and I will generate a full status report for you.',
+      timestamp: Date.now()
+    }
+  ]);
+  const [input, setInput] = useState('');
+  const [isTyping, setIsTyping] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, isTyping]);
+
+  const handleSend = async () => {
+    if (!input.trim()) return;
+
+    const userMsg: ChatMessage = {
+      id: Date.now().toString(),
+      role: 'user',
+      content: input,
+      timestamp: Date.now()
+    };
+
+    setMessages(prev => [...prev, userMsg]);
+    setInput('');
+    setIsTyping(true);
+
+    const searchTerm = userMsg.content.toLowerCase().trim();
+
+    // Find the record
+    const foundRecord = records.find(r => 
+      (r.referenceNumber || '').toLowerCase().includes(searchTerm) ||
+      (r.plotNumber || '').includes(searchTerm) ||
+      (r.applicationNumber || '').toLowerCase().includes(searchTerm) ||
+      (r.label || '').toLowerCase().includes(searchTerm) ||
+      (r.id || '').toLowerCase() === searchTerm
+    );
+
+    let botResponseContent = '';
+
+    if (foundRecord) {
+      // Generate AI Report
+      botResponseContent = await generateRecordReport(foundRecord);
+    } else {
+      botResponseContent = `I searched the database but couldn't find a project matching "**${userMsg.content}**".\n\nPlease check the number and try again. You can search by Reference, Plot, Application Number, or Project Name.`;
+    }
+
+    const botMsg: ChatMessage = {
+      id: (Date.now() + 1).toString(),
+      role: 'bot',
+      content: botResponseContent,
+      timestamp: Date.now()
+    };
+
+    setIsTyping(false);
+    setMessages(prev => [...prev, botMsg]);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
+
+  return (
+    <div className="flex flex-col h-[calc(100vh-8rem)] bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden animate-fade-in">
+      {/* Header */}
+      <div className="p-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900 flex items-center gap-3">
+        <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-500 to-indigo-500 flex items-center justify-center shadow-lg">
+           <Icons.AI className="w-6 h-6 text-white" />
+        </div>
+        <div>
+           <h3 className="font-bold text-slate-800 dark:text-white">AI Project Assistant</h3>
+           <p className="text-xs text-slate-500 dark:text-slate-400">Powered by Gemini 3</p>
+        </div>
+      </div>
+
+      {/* Messages Area */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar bg-slate-50/30 dark:bg-black/20">
+        {messages.map((msg) => (
+          <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+            <div className={`max-w-[85%] md:max-w-[75%] rounded-2xl p-4 shadow-sm relative ${
+              msg.role === 'user' 
+                ? 'bg-blue-600 text-white rounded-tr-sm' 
+                : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-100 dark:border-slate-700 rounded-tl-sm'
+            }`}>
+              {msg.role === 'bot' && (
+                 <div className="absolute -top-3 -left-3 w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900/50 border-2 border-white dark:border-slate-900 flex items-center justify-center">
+                    <Icons.AI className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                 </div>
+              )}
+              <div className="whitespace-pre-wrap text-sm leading-relaxed">
+                {msg.content}
+              </div>
+              <div className={`text-[10px] mt-2 opacity-70 text-right ${msg.role === 'user' ? 'text-blue-100' : 'text-slate-400'}`}>
+                {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </div>
+            </div>
+          </div>
+        ))}
+        {isTyping && (
+          <div className="flex justify-start">
+             <div className="bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-2xl rounded-tl-sm p-4 shadow-sm flex items-center gap-2">
+                <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce"></span>
+                <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></span>
+                <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></span>
+             </div>
+          </div>
+        )}
+        <div ref={messagesEndRef} />
+      </div>
+
+      {/* Input Area */}
+      <div className="p-4 bg-white dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800">
+         <div className="relative flex items-center gap-2">
+            <input 
+              type="text" 
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Enter Project No. (e.g., REF-12345)..." 
+              className="flex-1 pl-4 pr-12 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
+            />
+            <button 
+              onClick={handleSend}
+              disabled={!input.trim() || isTyping}
+              className="absolute right-2 p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+               <Icons.Send className="w-4 h-4" />
+            </button>
+         </div>
+         <p className="text-[10px] text-center text-slate-400 mt-2">
+            AI can make mistakes. Please verify important project details.
+         </p>
+      </div>
+    </div>
+  );
+};
+
 
 // --- New Dedicated Calculator Page ---
 const InfraCalculatorPage: React.FC = () => {
@@ -577,7 +734,7 @@ const ExcelUploader: React.FC<{ onUpload: (data: any[]) => void }> = ({ onUpload
 };
 
 const App: React.FC = () => {
-  const [currentView, setCurrentView] = useState<'dashboard' | 'calculator'>('dashboard');
+  const [currentView, setCurrentView] = useState<'dashboard' | 'calculator' | 'chat'>('dashboard');
   const [records, setRecords] = useState<RecordItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -656,13 +813,18 @@ const App: React.FC = () => {
             <button onClick={() => setCurrentView('calculator')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-colors ${currentView === 'calculator' ? 'bg-white/10 text-emerald-400' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
                 <Icons.Calculator className="w-5 h-5" /> Infra CC Calc
             </button>
+            <button onClick={() => setCurrentView('chat')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-colors ${currentView === 'chat' ? 'bg-white/10 text-emerald-400' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
+                <Icons.ChatBubble className="w-5 h-5" /> AI Assistant
+            </button>
          </nav>
       </aside>
 
       <main className="flex-1 md:ml-64 p-4 md:p-8 overflow-y-auto">
         <header className="flex justify-between items-center mb-8">
             <div>
-                <h2 className="text-2xl font-bold text-slate-800 dark:text-white">{currentView === 'calculator' ? 'Infrastructure Calculator' : 'Project Overview'}</h2>
+                <h2 className="text-2xl font-bold text-slate-800 dark:text-white">
+                  {currentView === 'calculator' ? 'Infrastructure Calculator' : currentView === 'chat' ? 'AI Assistant' : 'Project Overview'}
+                </h2>
                 <p className="text-slate-500 dark:text-slate-400 text-sm">Welcome back, system operational.</p>
             </div>
             <div className="flex gap-3">
@@ -674,6 +836,8 @@ const App: React.FC = () => {
 
         {currentView === 'calculator' ? (
             <InfraCalculatorPage />
+        ) : currentView === 'chat' ? (
+            <ChatPage records={records} />
         ) : (
             <div className="animate-fade-in">
                 {/* Dashboard View */}

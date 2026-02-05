@@ -24,7 +24,9 @@ import {
   Moon,
   Save,
   Calculator,
-  CreditCard
+  CreditCard,
+  MessageSquare,
+  Send
 } from 'lucide-react';
 
 export const Icons = {
@@ -53,5 +55,7 @@ export const Icons = {
   Moon: Moon,
   Save: Save,
   Calculator: Calculator,
-  CreditCard: CreditCard
+  CreditCard: CreditCard,
+  ChatBubble: MessageSquare,
+  Send: Send
 };
