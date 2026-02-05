@@ -45,9 +45,39 @@ export interface RecordItem {
 
 export interface InfraReferenceItem {
   id: string;
-  plotNumber: string;
-  details: Record<string, any>;
+  applicationNumber?: string;
+  bpRequestNumber?: string;
+  versionNumber?: string;
+  constructionType?: string;
+  ewaFeeStatus?: string;
+  applicationStatus?: string;
+  accountNumber?: string;
+  landOwnerId?: string;
+  ownerNameEn?: string;
+  ownerNameAr?: string;
+  numberOfAddresses?: string;
+  mouGatedCommunity?: string;
+  buildingNumber?: string;
+  blockNumber?: string;
+  roadNumber?: string;
+  plotNumber?: string;
+  titleDeed?: string;
+  buildableArea?: string;
+  momaaLoad?: string;
+  date?: string;
+  nationality?: string;
+  propCategory?: string;
+  usageNature?: string;
+  investmentZone?: string;
+  initialPaymentDate?: string;
+  secondPayment?: string;
+  thirdPayment?: string;
+  errorLog?: string;
+  partialExemption?: string;
   createdAt: string;
+  
+  // Frontend helper
+  _searchablePlot?: string;
 }
 
 export interface User {
