@@ -1,5 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
-import { RecordItem } from "../types";
+import { RecordItem, InfraReferenceItem } from "../types";
 
 // Ensure TypeScript recognizes process.env if @types/node is missing
 declare var process: {
@@ -9,8 +9,6 @@ declare var process: {
 };
 
 export const generateDataInsights = async (records: RecordItem[], query?: string): Promise<string> => {
-  // Access the key directly as per requirements. 
-  // Vite's `define` will replace `process.env.API_KEY` with the actual string literal during build.
   const apiKey = process.env.API_KEY;
 
   if (!apiKey) {
@@ -19,7 +17,6 @@ export const generateDataInsights = async (records: RecordItem[], query?: string
   }
 
   try {
-    // Initialize the client lazily to avoid top-level crashes
     const ai = new GoogleGenAI({ apiKey });
     
     const contextData = JSON.stringify(records.slice(0, 50));
@@ -43,7 +40,7 @@ export const generateDataInsights = async (records: RecordItem[], query?: string
   }
 };
 
-export const generateRecordReport = async (record: RecordItem): Promise<string> => {
+export const generateRecordReport = async (record: any): Promise<string> => {
   const apiKey = process.env.API_KEY;
 
   if (!apiKey) {
@@ -53,24 +50,43 @@ export const generateRecordReport = async (record: RecordItem): Promise<string> 
   try {
     const ai = new GoogleGenAI({ apiKey });
     
-    // Provide a rich context for the report
+    // Prepare a generic prompt that works for both active Records and Excel/Infra references
     const prompt = `
       You are an intelligent AI assistant for the 'Nexus Record Manager' system.
-      The user has requested a full status report for a specific project.
+      The user has requested a full status report for a specific project/plot.
       
-      Below is the raw data for the project record:
+      **Data Source**: ${record.plotNumber ? 'Infrastructure Database (Excel)' : 'Active Project Records'}
+      
+      **Raw Record Data**:
       ${JSON.stringify(record, null, 2)}
       
       Please generate a **Professional Project Status Report**.
       
-      The report should be formatted cleanly (you can use Markdown for bolding, lists, etc.) and include the following sections where data is available:
+      The report should be formatted cleanly (use Markdown) and include the following sections if data exists:
       
-      1.  **Executive Summary**: Project Name (${record.label}), Reference Number, and ID.
-      2.  **Current Status**: Clearly state the current Status (${record.status}). If the status is 'Suspended' or 'Redesign', emphasize this.
-      3.  **Location & Identification**: Block, Zone, Plot Number, and Road/Building details.
-      4.  **Timeline**: Application Date, Schedule Start Date, and any other relevant dates.
-      5.  **Technical & Financial**: Wayleave No., Account No., Load (${record.momaaLoad}), Fees Status.
-      6.  **Remarks / Outstanding Issues**: detailed analysis of any Justification, Error Logs, or missing critical info (like USP requirements).
+      1.  **Executive Summary**: 
+          - Identification: Plot ${record.plotNumber || 'N/A'}, Application ${record.applicationNumber || 'N/A'}, Reference ${record.referenceNumber || 'N/A'}.
+          - Owner: ${record.ownerNameEn || record.label || 'N/A'}.
+      
+      2.  **Current Status**: 
+          - State: ${record.status || record.applicationStatus || 'Unknown'}.
+          - Fee Status: ${record.ewaFeeStatus || 'N/A'}.
+      
+      3.  **Location Details**: 
+          - Block ${record.block || record.blockNumber || '-'}, Zone ${record.zone || record.investmentZone || '-'}, Road ${record.roadNumber || '-'}, Building ${record.buildingNumber || '-'}.
+      
+      4.  **Financial & Payments**:
+          - **Critical**: Check for 'Initial Payment Date', 'Second Payment', 'Third Payment'. 
+          - If dates exist, list them clearly. If they are missing/null, explicitly state "No Payment History Found".
+          - 13/2006 CC Status (if derived from calculation logic context, otherwise omit).
+      
+      5.  **Technical Details**:
+          - Load: ${record.momaaLoad || 'N/A'}.
+          - Wayleave: ${record.wayleaveNumber || 'N/A'}.
+          - Account: ${record.accountNumber || 'N/A'}.
+      
+      6.  **Remarks**: 
+          - Analyze 'Error log', 'Justification', or 'Notes' if present.
       
       Tone: Professional, informative, and direct.
     `;

@@ -80,6 +80,75 @@ const LoadingScreen: React.FC = () => (
   </div>
 );
 
+// --- Task Manager Component ---
+interface Task {
+  id: number;
+  text: string;
+  completed: boolean;
+}
+
+const TaskManager: React.FC = () => {
+  const [tasks, setTasks] = useState<Task[]>([
+    { id: 1, text: 'Review new Excel uploads', completed: false },
+    { id: 2, text: 'Check suspended projects', completed: false }
+  ]);
+  const [newTask, setNewTask] = useState('');
+
+  const addTask = () => {
+    if (!newTask.trim()) return;
+    setTasks([...tasks, { id: Date.now(), text: newTask, completed: false }]);
+    setNewTask('');
+  };
+
+  const toggleTask = (id: number) => {
+    setTasks(tasks.map(t => t.id === id ? { ...t, completed: !t.completed } : t));
+  };
+
+  const deleteTask = (id: number) => {
+    setTasks(tasks.filter(t => t.id !== id));
+  };
+
+  return (
+    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm p-6 h-full flex flex-col">
+      <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
+        <Icons.Check className="w-5 h-5 text-emerald-500" /> Admin Tasks
+      </h3>
+      
+      <div className="flex gap-2 mb-4">
+        <input 
+          type="text" 
+          value={newTask} 
+          onChange={(e) => setNewTask(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && addTask()}
+          placeholder="Add new task..." 
+          className="flex-1 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm outline-none focus:border-emerald-500"
+        />
+        <button onClick={addTask} className="p-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors">
+          <Icons.Plus className="w-4 h-4" />
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto custom-scrollbar space-y-2">
+        {tasks.length === 0 ? (
+          <p className="text-center text-xs text-slate-400 py-4">No pending tasks</p>
+        ) : (
+          tasks.map(task => (
+            <div key={task.id} className="flex items-center gap-3 p-2 hover:bg-slate-50 dark:hover:bg-slate-800/50 rounded-lg group transition-colors">
+              <button onClick={() => toggleTask(task.id)} className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${task.completed ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-300 dark:border-slate-600'}`}>
+                {task.completed && <Icons.Check className="w-3 h-3" />}
+              </button>
+              <span className={`flex-1 text-sm ${task.completed ? 'text-slate-400 line-through' : 'text-slate-700 dark:text-slate-200'}`}>{task.text}</span>
+              <button onClick={() => deleteTask(task.id)} className="text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                <Icons.Trash className="w-4 h-4" />
+              </button>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+};
+
 // --- Chat Page Component ---
 interface ChatMessage {
   id: string;
@@ -93,7 +162,7 @@ const ChatPage: React.FC<{ records: RecordItem[] }> = ({ records }) => {
     {
       id: 'welcome',
       role: 'bot',
-      content: 'Hello! I am your AI Project Assistant. Please provide a **Project Number**, Reference, Plot Number, or Application Number, and I will generate a full status report for you.',
+      content: 'Hello! I am your AI Project Assistant. I can access both your active records and the full infrastructure database. Please provide a **Project Number**, **Plot Number**, or **Reference**, and I will generate a full status report.',
       timestamp: Date.now()
     }
   ]);
@@ -125,8 +194,8 @@ const ChatPage: React.FC<{ records: RecordItem[] }> = ({ records }) => {
 
     const searchTerm = userMsg.content.toLowerCase().trim();
 
-    // Find the record
-    const foundRecord = records.find(r => 
+    // 1. First, search in Active Records (Local state)
+    let foundRecord: any = records.find(r => 
       (r.referenceNumber || '').toLowerCase().includes(searchTerm) ||
       (r.plotNumber || '').includes(searchTerm) ||
       (r.applicationNumber || '').toLowerCase().includes(searchTerm) ||
@@ -134,13 +203,30 @@ const ChatPage: React.FC<{ records: RecordItem[] }> = ({ records }) => {
       (r.id || '').toLowerCase() === searchTerm
     );
 
+    let source = 'Active Records';
+
+    // 2. If not found, search in Infra References (Database)
+    if (!foundRecord) {
+         try {
+             // We use the imported service to search the database
+             const infraResults = await searchInfraReferences(searchTerm);
+             // Prefer exact match on plot if possible, else take first
+             if (infraResults && infraResults.length > 0) {
+                 foundRecord = infraResults.find(r => r.plotNumber === searchTerm) || infraResults[0];
+                 source = 'Infrastructure Database (Excel)';
+             }
+         } catch (err) {
+             console.error("Chat search error:", err);
+         }
+    }
+
     let botResponseContent = '';
 
     if (foundRecord) {
       // Generate AI Report
       botResponseContent = await generateRecordReport(foundRecord);
     } else {
-      botResponseContent = `I searched the database but couldn't find a project matching "**${userMsg.content}**".\n\nPlease check the number and try again. You can search by Reference, Plot, Application Number, or Project Name.`;
+      botResponseContent = `I searched both the active projects and the uploaded database but couldn't find a record matching "**${userMsg.content}**".\n\nPlease check the number and try again. Supported formats:\n- Plot Number (e.g. 12002678)\n- Application Number\n- Reference Number`;
     }
 
     const botMsg: ChatMessage = {
@@ -170,7 +256,7 @@ const ChatPage: React.FC<{ records: RecordItem[] }> = ({ records }) => {
         </div>
         <div>
            <h3 className="font-bold text-slate-800 dark:text-white">AI Project Assistant</h3>
-           <p className="text-xs text-slate-500 dark:text-slate-400">Powered by Gemini 3</p>
+           <p className="text-xs text-slate-500 dark:text-slate-400">Powered by Gemini 3 • Connected to Full Database</p>
         </div>
       </div>
 
@@ -217,7 +303,7 @@ const ChatPage: React.FC<{ records: RecordItem[] }> = ({ records }) => {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Enter Project No. (e.g., REF-12345)..." 
+              placeholder="Enter Plot No, Project Ref, or App No..." 
               className="flex-1 pl-4 pr-12 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
             />
             <button 
@@ -850,23 +936,30 @@ const App: React.FC = () => {
                     </div>
                 )}
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-                    <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm flex items-center gap-4">
-                        <div className="w-12 h-12 rounded-xl bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center text-blue-600"><Icons.Dashboard /></div>
-                        <div><p className="text-xs font-bold uppercase text-slate-500">Total Projects</p><p className="text-2xl font-bold">{stats.total}</p></div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                    {/* Stats Column */}
+                    <div className="md:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm flex items-center gap-4">
+                            <div className="w-12 h-12 rounded-xl bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center text-blue-600"><Icons.Dashboard /></div>
+                            <div><p className="text-xs font-bold uppercase text-slate-500">Total Projects</p><p className="text-2xl font-bold">{stats.total}</p></div>
+                        </div>
+                        <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm flex items-center gap-4">
+                            <div className="w-12 h-12 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 flex items-center justify-center text-emerald-600"><Icons.Check /></div>
+                            <div><p className="text-xs font-bold uppercase text-slate-500">Completed</p><p className="text-2xl font-bold">{stats.completed}</p></div>
+                        </div>
+                        <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm flex items-center gap-4">
+                            <div className="w-12 h-12 rounded-xl bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center text-amber-600"><Icons.Clock /></div>
+                            <div><p className="text-xs font-bold uppercase text-slate-500">Pending</p><p className="text-2xl font-bold">{stats.pending}</p></div>
+                        </div>
+                        <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm flex items-center gap-4">
+                            <div className="w-12 h-12 rounded-xl bg-red-50 dark:bg-red-900/20 flex items-center justify-center text-red-600"><Icons.Alert /></div>
+                            <div><p className="text-xs font-bold uppercase text-slate-500">Suspended</p><p className="text-2xl font-bold">{stats.suspended}</p></div>
+                        </div>
                     </div>
-                    {/* ... (Other stats cards same as before) ... */}
-                    <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm flex items-center gap-4">
-                        <div className="w-12 h-12 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 flex items-center justify-center text-emerald-600"><Icons.Check /></div>
-                        <div><p className="text-xs font-bold uppercase text-slate-500">Completed</p><p className="text-2xl font-bold">{stats.completed}</p></div>
-                    </div>
-                    <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm flex items-center gap-4">
-                        <div className="w-12 h-12 rounded-xl bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center text-amber-600"><Icons.Clock /></div>
-                        <div><p className="text-xs font-bold uppercase text-slate-500">Pending</p><p className="text-2xl font-bold">{stats.pending}</p></div>
-                    </div>
-                    <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm flex items-center gap-4">
-                        <div className="w-12 h-12 rounded-xl bg-red-50 dark:bg-red-900/20 flex items-center justify-center text-red-600"><Icons.Alert /></div>
-                        <div><p className="text-xs font-bold uppercase text-slate-500">Suspended</p><p className="text-2xl font-bold">{stats.suspended}</p></div>
+
+                    {/* Task Manager Widget */}
+                    <div className="md:col-span-1 h-full min-h-[300px]">
+                       <TaskManager />
                     </div>
                 </div>
 
