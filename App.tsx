@@ -3,12 +3,12 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Icons } from './components/Icons';
 import * as XLSX from 'xlsx';
 import { RecordItem, InfraReferenceItem } from './types';
-import { getRecords, addRecord, deleteRecord, searchInfraReferences, getInfraHookData, saveInfraReferences } from './services/storageService';
+import { getRecords, addRecord, updateRecord, deleteRecord, searchInfraReferences, getInfraHookData, saveInfraReferences } from './services/storageService';
 
 // --- Constants ---
 
-const UI_STATUS_OPTIONS = ["In Design", "GIS", "WL / GSN", "USP", "Passed"];
-const STATUS_SEQUENCE = ["All Projects", ...UI_STATUS_OPTIONS];
+const STATUS_OPTIONS = ["In Design", "GIS", "WL / GSN", "USP", "Passed"];
+const STATUS_SEQUENCE = ["All Projects", ...STATUS_OPTIONS];
 
 const VALID_IMPORT_STATUSES = [
   "Assign planning", "Site Visit", "Design", "Design approval", 
@@ -65,11 +65,26 @@ const getValueByFuzzyKey = (row: any, ...candidates: string[]): string => {
 
 // --- Styled Sub-Components ---
 
+const FeedbackMessage: React.FC<{ message: string, type: 'success' | 'error', onClose: () => void }> = ({ message, type, onClose }) => {
+  useEffect(() => {
+    const timer = setTimeout(onClose, 3000);
+    return () => clearTimeout(timer);
+  }, [onClose]);
+
+  return (
+    <div className={`fixed bottom-8 right-8 z-[100] px-6 py-4 rounded-2xl shadow-2xl border flex items-center gap-3 animate-fade-in-up ${
+      type === 'success' ? 'bg-emerald-500 border-emerald-400 text-white' : 'bg-rose-500 border-rose-400 text-white'
+    }`}>
+      {type === 'success' ? <Icons.Check className="w-5 h-5" /> : <Icons.Alert className="w-5 h-5" />}
+      <span className="text-sm font-normal">{message}</span>
+    </div>
+  );
+};
+
 const InfraHookBadge: React.FC<{ plot: string, hookData: Record<string, { appNo: string, isPaid: boolean }> }> = ({ plot, hookData }) => {
   const normalized = normalizePlot(plot);
   const data = hookData[normalized];
 
-  // Logic: Only YES if record exists AND isPaid is true (meaning one of the 3 payment fields has a valid value)
   if (data && data.isPaid) {
     return (
       <div className="relative group cursor-help flex items-center">
@@ -101,6 +116,110 @@ const StatCard: React.FC<{ label: string; value: string | number; icon: any; col
     <div>
       <p className="text-slate-400 text-xs font-normal uppercase tracking-widest mb-1">{label}</p>
       <p className="text-2xl font-normal text-slate-900 dark:text-white leading-none">{value}</p>
+    </div>
+  </div>
+);
+
+// --- Modals ---
+
+const EditModal: React.FC<{ record: RecordItem, onClose: () => void, onSave: (u: Partial<RecordItem>) => void }> = ({ record, onClose, onSave }) => {
+  const [form, setForm] = useState<Partial<RecordItem>>({ ...record });
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[70] flex items-center justify-center p-4 animate-fade-in">
+      <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] p-10 max-w-2xl w-full shadow-2xl animate-scale-in border border-white/5 overflow-y-auto max-h-[90vh] custom-scrollbar">
+        <div className="flex justify-between items-center mb-8">
+          <div>
+            <h3 className="text-xl font-normal text-slate-900 dark:text-white uppercase tracking-tight">Edit Project</h3>
+            <p className="text-[10px] text-slate-400 font-normal uppercase tracking-widest mt-1">Ref: {record.referenceNumber}</p>
+          </div>
+          <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 transition-colors"><Icons.Close className="w-5 h-5" /></button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="space-y-1">
+            <label className="text-[10px] font-normal text-slate-400 uppercase tracking-widest ml-1">Project Label</label>
+            <input 
+              value={form.label} 
+              onChange={e => setForm({ ...form, label: e.target.value })}
+              className="w-full px-4 py-3 bg-slate-50 dark:bg-black border border-slate-200 dark:border-white/10 rounded-xl text-sm outline-none focus:ring-1 focus:ring-indigo-500"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] font-normal text-slate-400 uppercase tracking-widest ml-1">Status</label>
+            <select 
+              value={form.status} 
+              onChange={e => setForm({ ...form, status: e.target.value })}
+              className="w-full px-4 py-3 bg-slate-50 dark:bg-black border border-slate-200 dark:border-white/10 rounded-xl text-sm outline-none focus:ring-1 focus:ring-indigo-500 appearance-none"
+            >
+              {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] font-normal text-slate-400 uppercase tracking-widest ml-1">Zone</label>
+            <input 
+              value={form.zone} 
+              onChange={e => setForm({ ...form, zone: e.target.value })}
+              className="w-full px-4 py-3 bg-slate-50 dark:bg-black border border-slate-200 dark:border-white/10 rounded-xl text-sm outline-none focus:ring-1 focus:ring-indigo-500"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] font-normal text-slate-400 uppercase tracking-widest ml-1">Plot Number</label>
+            <input 
+              value={form.plotNumber} 
+              onChange={e => setForm({ ...form, plotNumber: e.target.value })}
+              className="w-full px-4 py-3 bg-slate-50 dark:bg-black border border-slate-200 dark:border-white/10 rounded-xl text-sm outline-none focus:ring-1 focus:ring-indigo-500"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] font-normal text-slate-400 uppercase tracking-widest ml-1">Wayleave</label>
+            <input 
+              value={form.wayleaveNumber} 
+              onChange={e => setForm({ ...form, wayleaveNumber: e.target.value })}
+              className="w-full px-4 py-3 bg-slate-50 dark:bg-black border border-slate-200 dark:border-white/10 rounded-xl text-sm outline-none focus:ring-1 focus:ring-indigo-500"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] font-normal text-slate-400 uppercase tracking-widest ml-1">Account Number</label>
+            <input 
+              value={form.accountNumber} 
+              onChange={e => setForm({ ...form, accountNumber: e.target.value })}
+              className="w-full px-4 py-3 bg-slate-50 dark:bg-black border border-slate-200 dark:border-white/10 rounded-xl text-sm outline-none focus:ring-1 focus:ring-indigo-500"
+            />
+          </div>
+        </div>
+
+        <div className="mt-10 flex gap-3">
+          <button 
+            onClick={() => onSave(form)}
+            className="flex-1 py-3.5 bg-indigo-600 text-white rounded-xl font-normal uppercase text-[11px] tracking-widest shadow-md hover:bg-indigo-700 transition-all"
+          >
+            Save Changes
+          </button>
+          <button 
+            onClick={onClose}
+            className="px-8 py-3.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl font-normal uppercase text-[11px] tracking-widest"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const ConfirmModal: React.FC<{ message: string, onConfirm: () => void, onClose: () => void }> = ({ message, onConfirm, onClose }) => (
+  <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[80] flex items-center justify-center p-4 animate-fade-in">
+    <div className="bg-white dark:bg-slate-900 rounded-[2rem] p-10 max-w-md w-full shadow-2xl animate-scale-in border border-white/5 text-center">
+      <div className="w-16 h-16 bg-rose-500/10 rounded-2xl flex items-center justify-center mx-auto mb-6">
+        <Icons.Alert className="w-8 h-8 text-rose-500" />
+      </div>
+      <h3 className="text-xl font-normal text-slate-900 dark:text-white mb-2 uppercase tracking-tight">Confirm Action</h3>
+      <p className="text-sm text-slate-500 dark:text-slate-400 font-normal leading-relaxed mb-8">{message}</p>
+      <div className="flex gap-3">
+        <button onClick={onConfirm} className="flex-1 py-3 bg-rose-600 text-white rounded-xl font-normal uppercase text-[11px] tracking-widest shadow-md hover:bg-rose-700 transition-all">Confirm</button>
+        <button onClick={onClose} className="flex-1 py-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl font-normal uppercase text-[11px] tracking-widest">Cancel</button>
+      </div>
     </div>
   </div>
 );
@@ -383,6 +502,15 @@ const App: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showUpload, setShowUpload] = useState(false);
   const [infraHookData, setInfraHookData] = useState<Record<string, { appNo: string, isPaid: boolean }>>({});
+  
+  // Feedback
+  const [feedback, setFeedback] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
+  
+  // Confirmation
+  const [confirmState, setConfirmState] = useState<{ message: string, onConfirm: () => void } | null>(null);
+
+  // Editing
+  const [editingRecord, setEditingRecord] = useState<RecordItem | null>(null);
 
   const [importProgress, setImportProgress] = useState<{ 
     total: number, current: number, active: boolean, success: number, error: number, finished: boolean,
@@ -440,15 +568,13 @@ const App: React.FC = () => {
           });
         } 
         else if (plot && plot !== '') {
-          // Logic for Infrastructure hook records (Infra Engine)
           stagedInfra.push({
             applicationNumber: getValueByFuzzyKey(row, "Application Number", "App No", "Reference"),
             plotNumber: plot,
             ownerNameEn: getValueByFuzzyKey(row, "Owner", "Name"),
-            // Map payment statuses using the exact requested names + some fallbacks
-            initialPaymentDate: getValueByFuzzyKey(row, "First Installment", "Initial Payment Date", "Initial Payment", "Payment Date"),
-            secondPayment: getValueByFuzzyKey(row, "Second Installment", "2nd Installment", "Second Payment"),
-            thirdPayment: getValueByFuzzyKey(row, "Final Settlement", "Third Installment", "3rd Installment", "Settlement", "Third Payment"),
+            initialPaymentDate: getValueByFuzzyKey(row, "First Installment", "Initial Payment Date"),
+            secondPayment: getValueByFuzzyKey(row, "Second Installment"),
+            thirdPayment: getValueByFuzzyKey(row, "Final Settlement"),
             createdAt: new Date().toISOString()
           });
         }
@@ -494,6 +620,34 @@ const App: React.FC = () => {
     }
     await loadData();
     setImportProgress(prev => ({ ...prev, finished: true }));
+  };
+
+  const handleDelete = (id: string) => {
+    setConfirmState({
+      message: "Are you sure you want to permanently delete this project record? This action cannot be undone.",
+      onConfirm: async () => {
+        const success = await deleteRecord(id);
+        if (success) {
+          setFeedback({ message: "Record deleted successfully", type: 'success' });
+          loadData();
+        } else {
+          setFeedback({ message: "Failed to delete record", type: 'error' });
+        }
+        setConfirmState(null);
+      }
+    });
+  };
+
+  const handleUpdateRecord = async (updates: Partial<RecordItem>) => {
+    if (!editingRecord) return;
+    const success = await updateRecord(editingRecord.id, updates);
+    if (success) {
+      setFeedback({ message: "Project updated successfully", type: 'success' });
+      setEditingRecord(null);
+      loadData();
+    } else {
+      setFeedback({ message: "Update failed", type: 'error' });
+    }
   };
 
   if (loading) return (
@@ -558,11 +712,37 @@ const App: React.FC = () => {
                searchTerm={searchTerm} 
                onSearch={setSearchTerm} 
                onUpload={() => setShowUpload(true)}
-               onEdit={() => {}}
-               onDelete={(id) => { if(confirm('Delete record?')) deleteRecord(id).then(loadData); }}
+               onEdit={(r) => setEditingRecord(r)}
+               onDelete={handleDelete}
              />
            ) : <CalculatorView />}
         </div>
+
+        {/* --- Global Modals --- */}
+        
+        {editingRecord && (
+          <EditModal 
+            record={editingRecord} 
+            onClose={() => setEditingRecord(null)} 
+            onSave={handleUpdateRecord} 
+          />
+        )}
+
+        {confirmState && (
+          <ConfirmModal 
+            message={confirmState.message} 
+            onConfirm={confirmState.onConfirm} 
+            onClose={() => setConfirmState(null)} 
+          />
+        )}
+
+        {feedback && (
+          <FeedbackMessage 
+            message={feedback.message} 
+            type={feedback.type} 
+            onClose={() => setFeedback(null)} 
+          />
+        )}
 
         {showUpload && (
             <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4 animate-fade-in">
