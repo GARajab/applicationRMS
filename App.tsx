@@ -3,15 +3,13 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Icons } from './components/Icons';
 import * as XLSX from 'xlsx';
 import { RecordItem, InfraReferenceItem } from './types';
-import { getRecords, addRecord, deleteRecord, searchInfraReferences, getPaidPlotNumbers, saveInfraReferences } from './services/storageService';
+import { getRecords, addRecord, deleteRecord, searchInfraReferences, getInfraHookData, saveInfraReferences } from './services/storageService';
 
 // --- Constants ---
 
-// The Dashboard/Dropdown UI categories
 const UI_STATUS_OPTIONS = ["In Design", "GIS", "WL / GSN", "USP", "Passed"];
 const STATUS_SEQUENCE = ["All Projects", ...UI_STATUS_OPTIONS];
 
-// The strictly allowed statuses from the Excel Source (Normalized for display)
 const VALID_IMPORT_STATUSES = [
   "Assign planning", "Site Visit", "Design", "Design approval", 
   "GIS digitalization", "Wayleave", "Cost estimation", 
@@ -23,13 +21,8 @@ const EWA_LOGO = "https://www.gdnonline.com/gdnimages/20230724/20230724111752EWA
 
 // --- Helper Functions ---
 
-/**
- * Maps Excel Source Statuses to the new UI Status Categories
- * Logic is case-insensitive for robustness.
- */
 const mapSourceToUIStatus = (sourceStatus: string): string => {
   const s = sourceStatus.trim().toLowerCase();
-  
   const inDesign = ["assign planning", "site visit", "design", "design approval", "engineer approval", "1redesign"];
   const gis = ["gis digitalization"];
   const wl = ["wayleave"];
@@ -42,7 +35,7 @@ const mapSourceToUIStatus = (sourceStatus: string): string => {
   if (usp.includes(s)) return "USP";
   if (passed.includes(s)) return "Passed";
   
-  return "In Design"; // Default fallback
+  return "In Design";
 };
 
 const parseDateSafe = (value: any): string => {
@@ -72,33 +65,42 @@ const getValueByFuzzyKey = (row: any, ...candidates: string[]): string => {
 
 // --- Styled Sub-Components ---
 
-const InfraBadge: React.FC<{ isPaid: boolean }> = ({ isPaid }) => {
-  if (isPaid) {
+const InfraHookBadge: React.FC<{ plot: string, hookData: Record<string, { appNo: string, isPaid: boolean }> }> = ({ plot, hookData }) => {
+  const normalized = normalizePlot(plot);
+  const data = hookData[normalized];
+
+  // Logic: Only YES if record exists AND isPaid is true (meaning one of the 3 payment fields has a valid value)
+  if (data && data.isPaid) {
     return (
       <div className="relative group cursor-help flex items-center">
-        <div className="absolute -inset-1 bg-emerald-500 rounded-full blur opacity-20 group-hover:opacity-40 transition animate-pulse"></div>
-        <div className="relative flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 border border-emerald-500/30 rounded-full text-emerald-500 font-black text-[10px] uppercase tracking-tighter">
-           <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
-           <span>Paid</span>
+        <div className="absolute -inset-1 bg-emerald-500 rounded-lg blur opacity-10 group-hover:opacity-20 transition"></div>
+        <div className="relative flex flex-col items-start px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl">
+           <div className="flex items-center gap-1.5">
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
+              <span className="text-emerald-600 dark:text-emerald-400 font-normal text-[10px] uppercase tracking-wide">YES</span>
+           </div>
+           <span className="text-[9px] font-normal text-slate-400 uppercase leading-none mt-0.5">{data.appNo}</span>
         </div>
       </div>
     );
   }
+
   return (
-    <div className="flex items-center gap-1.5 px-3 py-1 bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 rounded-full text-slate-400 font-bold text-[10px] uppercase tracking-tighter opacity-60">
-        <span>No Record</span>
+    <div className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 dark:bg-rose-500/5 border border-rose-100 dark:border-rose-500/10 rounded-xl opacity-80">
+        <div className="w-1.5 h-1.5 rounded-full bg-rose-400"></div>
+        <span className="text-rose-500 font-normal text-[10px] uppercase tracking-wide">NO</span>
     </div>
   );
 };
 
 const StatCard: React.FC<{ label: string; value: string | number; icon: any; color: string }> = ({ label, value, icon: Icon, color }) => (
-  <div className="bg-white dark:bg-slate-900/60 backdrop-blur-md p-6 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm flex items-center gap-5 hover:shadow-lg hover:-translate-y-1 transition-all duration-300">
+  <div className="bg-white dark:bg-slate-900/40 backdrop-blur-md p-6 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm flex items-center gap-5 hover:shadow-md transition-all duration-300">
     <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ${color} bg-opacity-10`}>
-      <Icon className={`w-7 h-7 ${color.replace('bg-', 'text-')}`} />
+      <Icon className={`w-6 h-6 ${color.replace('bg-', 'text-')}`} />
     </div>
     <div>
-      <p className="text-slate-400 text-xs font-black uppercase tracking-widest mb-1">{label}</p>
-      <p className="text-3xl font-black text-slate-900 dark:text-white leading-none">{value}</p>
+      <p className="text-slate-400 text-xs font-normal uppercase tracking-widest mb-1">{label}</p>
+      <p className="text-2xl font-normal text-slate-900 dark:text-white leading-none">{value}</p>
     </div>
   </div>
 );
@@ -107,13 +109,13 @@ const StatCard: React.FC<{ label: string; value: string | number; icon: any; col
 
 const DashboardView: React.FC<{ 
   records: RecordItem[], 
-  paidPlots: Set<string>, 
+  infraHookData: Record<string, { appNo: string, isPaid: boolean }>, 
   onSearch: (t: string) => void, 
   searchTerm: string,
   onUpload: () => void,
   onEdit: (r: RecordItem) => void,
   onDelete: (id: string) => void
-}> = ({ records, paidPlots, onSearch, searchTerm, onUpload, onEdit, onDelete }) => {
+}> = ({ records, infraHookData, onSearch, searchTerm, onUpload, onEdit, onDelete }) => {
   const [activeTab, setActiveTab] = useState("All Projects");
 
   const filteredData = useMemo(() => {
@@ -132,54 +134,54 @@ const DashboardView: React.FC<{
     return data;
   }, [records, activeTab, searchTerm]);
 
-  const paidCount = records.filter(r => r.plotNumber && paidPlots.has(normalizePlot(r.plotNumber))).length;
+  const paidCount = (Object.values(infraHookData) as { appNo: string, isPaid: boolean }[]).filter(v => v.isPaid).length;
 
   return (
     <div className="space-y-8 animate-fade-in-up">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <StatCard label="Live Portfolio" value={records.length} icon={Icons.Dashboard} color="bg-indigo-500" />
-        <StatCard label="Total Payments (Infra)" value={paidCount} icon={Icons.Check} color="bg-emerald-500" />
+        <StatCard label="Infra Validated (YES)" value={paidCount} icon={Icons.Check} color="bg-emerald-500" />
       </div>
 
       <div className="sticky top-0 z-20 -mx-8 px-8 py-4 bg-slate-50/80 dark:bg-black/80 backdrop-blur-xl border-b border-slate-200 dark:border-white/5 overflow-x-auto no-scrollbar">
-        <div className="flex gap-3">
+        <div className="flex gap-2">
           {STATUS_SEQUENCE.map(status => {
             const count = status === "All Projects" ? records.length : records.filter(r => (r.status||'').toLowerCase() === status.toLowerCase()).length;
             return (
               <button
                 key={status}
                 onClick={() => setActiveTab(status)}
-                className={`whitespace-nowrap px-6 py-2.5 rounded-2xl text-xs font-black transition-all duration-300 border ${
+                className={`whitespace-nowrap px-5 py-2 rounded-2xl text-xs font-normal transition-all duration-300 border ${
                   activeTab === status 
-                    ? 'bg-slate-900 dark:bg-white text-white dark:text-black border-transparent shadow-xl scale-105' 
-                    : 'bg-white dark:bg-slate-900/50 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-white/5 hover:border-slate-300'
+                    ? 'bg-slate-900 dark:bg-white text-white dark:text-black border-transparent shadow-md' 
+                    : 'bg-white dark:bg-slate-900/50 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-white/5 hover:bg-slate-100 dark:hover:bg-white/10'
                 }`}
               >
-                {status.toUpperCase()} <span className="ml-2 opacity-40 font-bold">{count}</span>
+                {status.toUpperCase()} <span className="ml-2 opacity-60">{count}</span>
               </button>
             );
           })}
         </div>
       </div>
 
-      <div className="bg-white dark:bg-slate-900/40 rounded-[2.5rem] border border-slate-200 dark:border-white/5 shadow-2xl overflow-hidden">
+      <div className="bg-white dark:bg-slate-900/20 rounded-[2rem] border border-slate-200 dark:border-white/5 shadow-sm overflow-hidden">
         <div className="p-8 flex flex-col md:flex-row justify-between items-center gap-6 border-b border-slate-100 dark:border-white/5">
             <div>
-                <h2 className="text-2xl font-black text-slate-900 dark:text-white tracking-tighter">{activeTab}</h2>
-                <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-1">Found {filteredData.length} entries</p>
+                <h2 className="text-xl font-normal text-slate-900 dark:text-white tracking-tight">{activeTab}</h2>
+                <p className="text-slate-400 text-[10px] font-normal uppercase tracking-widest mt-1">Found {filteredData.length} entries</p>
             </div>
-            <div className="flex gap-4 w-full md:w-auto">
-                <div className="relative flex-1 md:w-80">
+            <div className="flex gap-3 w-full md:w-auto">
+                <div className="relative flex-1 md:w-72">
                     <Icons.Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
                     <input 
                       type="text" 
-                      placeholder="Search Label, Plot or Ref..." 
+                      placeholder="Search..." 
                       value={searchTerm}
                       onChange={(e) => onSearch(e.target.value)}
-                      className="w-full pl-11 pr-4 py-3 bg-slate-100 dark:bg-white/5 rounded-2xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                      className="w-full pl-11 pr-4 py-2.5 bg-slate-100/50 dark:bg-white/5 rounded-xl text-sm font-normal focus:ring-1 focus:ring-indigo-500 outline-none transition-all"
                     />
                 </div>
-                <button onClick={onUpload} className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-sm font-black shadow-lg shadow-indigo-500/20 transition-all active:scale-95 flex items-center gap-2">
+                <button onClick={onUpload} className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-normal shadow-sm transition-all active:scale-95 flex items-center gap-2 tracking-wide">
                     <Icons.Plus className="w-4 h-4" /> IMPORT
                 </button>
             </div>
@@ -190,34 +192,34 @@ const DashboardView: React.FC<{
             <thead className="bg-slate-50/50 dark:bg-white/5">
               <tr>
                 {["Project", "Stage", "Zone", "Reference", "Plot", "Infra Hook", ""].map(h => (
-                  <th key={h} className="px-8 py-5 font-black text-slate-400 uppercase text-[10px] tracking-widest">{h}</th>
+                  <th key={h} className="px-8 py-4 font-normal text-slate-400 uppercase text-[10px] tracking-widest">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-white/5">
               {filteredData.length === 0 ? (
-                <tr><td colSpan={7} className="p-12 text-center text-slate-400 italic font-bold">No active projects found in this stage.</td></tr>
+                <tr><td colSpan={7} className="p-12 text-center text-slate-400 italic">No records found.</td></tr>
               ) : filteredData.map((r) => (
-                <tr key={r.id} className="group hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">
-                  <td className="px-8 py-6">
-                    <div className="font-black text-slate-900 dark:text-white text-base tracking-tight">{r.label}</div>
-                    <div className="text-[10px] text-slate-400 font-bold uppercase">{r.subtype || 'Project'}</div>
+                <tr key={r.id} className="group hover:bg-slate-50/50 dark:hover:bg-white/5 transition-colors">
+                  <td className="px-8 py-5">
+                    <div className="font-normal text-slate-900 dark:text-white text-base">{r.label}</div>
+                    <div className="text-[10px] text-slate-400 font-normal uppercase tracking-tight">{r.subtype || 'Project'}</div>
                   </td>
-                  <td className="px-8 py-6">
-                    <span className="px-3 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-[10px] font-black uppercase tracking-tighter border border-indigo-100 dark:border-indigo-500/20">
+                  <td className="px-8 py-5">
+                    <span className="px-2.5 py-0.5 rounded-lg bg-indigo-50/50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-[10px] font-normal uppercase tracking-wide border border-indigo-100 dark:border-indigo-500/20">
                       {r.status}
                     </span>
                   </td>
-                  <td className="px-8 py-6 text-slate-500 dark:text-slate-400 font-black">{r.zone}</td>
-                  <td className="px-8 py-6 text-slate-400 font-mono text-xs">{r.referenceNumber}</td>
-                  <td className="px-8 py-6 font-black text-slate-800 dark:text-slate-200">{r.plotNumber || '-'}</td>
-                  <td className="px-8 py-6">
-                    <InfraBadge isPaid={!!(r.plotNumber && paidPlots.has(normalizePlot(r.plotNumber)))} />
+                  <td className="px-8 py-5 text-slate-500 dark:text-slate-400">{r.zone}</td>
+                  <td className="px-8 py-5 text-slate-400 font-mono text-[11px]">{r.referenceNumber}</td>
+                  <td className="px-8 py-5 font-normal text-slate-700 dark:text-slate-300">{r.plotNumber || '-'}</td>
+                  <td className="px-8 py-5">
+                    <InfraHookBadge plot={r.plotNumber || ''} hookData={infraHookData} />
                   </td>
-                  <td className="px-8 py-6 text-right">
-                    <div className="flex justify-end gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={() => onEdit(r)} className="p-2 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 rounded-xl"><Icons.Edit className="w-4 h-4" /></button>
-                      <button onClick={() => onDelete(r.id)} className="p-2 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-xl"><Icons.Trash className="w-4 h-4" /></button>
+                  <td className="px-8 py-5 text-right">
+                    <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button onClick={() => onEdit(r)} className="p-2 text-slate-400 hover:text-indigo-600 transition-colors"><Icons.Edit className="w-4 h-4" /></button>
+                      <button onClick={() => onDelete(r.id)} className="p-2 text-slate-400 hover:text-rose-600 transition-colors"><Icons.Trash className="w-4 h-4" /></button>
                     </div>
                   </td>
                 </tr>
@@ -263,55 +265,55 @@ const CalculatorView: React.FC = () => {
   return (
     <div className="flex flex-col lg:flex-row gap-8 min-h-[70vh] animate-fade-in-up">
       <div className="w-full lg:w-1/3 flex flex-col gap-6">
-        <div className="bg-white dark:bg-slate-900 p-8 rounded-[2rem] border border-slate-200 dark:border-white/5 shadow-xl">
-          <h2 className="text-lg font-black mb-6 text-slate-900 dark:text-white flex items-center gap-3 uppercase tracking-tighter">
-            <Icons.Search className="w-5 h-5 text-indigo-500" /> Database Search
+        <div className="bg-white dark:bg-slate-900 p-8 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm">
+          <h2 className="text-sm font-normal mb-6 text-slate-900 dark:text-white flex items-center gap-2 uppercase tracking-widest">
+            <Icons.Search className="w-4 h-4 text-indigo-500" /> Database Search
           </h2>
-          <div className="relative group">
+          <div className="relative">
             <input 
               type="text" 
               placeholder="PLOT NUMBER..." 
               value={plotSearch}
               onChange={e => setPlotSearch(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && handleSearch()}
-              className="w-full pl-6 pr-14 py-4 bg-slate-50 dark:bg-black border border-slate-200 dark:border-white/10 rounded-2xl font-black text-xl outline-none focus:ring-4 focus:ring-indigo-500/20 transition-all"
+              className="w-full pl-5 pr-14 py-3 bg-slate-50 dark:bg-black border border-slate-200 dark:border-white/10 rounded-2xl font-normal text-lg outline-none focus:ring-1 focus:ring-indigo-500 transition-all"
             />
-            <button onClick={handleSearch} className="absolute right-2 top-2 bottom-2 px-4 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors">
-              {loading ? <Icons.Spinner className="w-5 h-5 animate-spin" /> : <Icons.Right className="w-5 h-5" />}
+            <button onClick={handleSearch} className="absolute right-2 top-2 bottom-2 px-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors">
+              {loading ? <Icons.Spinner className="w-4 h-4 animate-spin" /> : <Icons.Right className="w-4 h-4" />}
             </button>
           </div>
         </div>
 
-        <div className="bg-white dark:bg-slate-900 p-8 rounded-[2rem] border border-slate-200 dark:border-white/5 shadow-xl">
-           <h2 className="text-lg font-black mb-6 text-slate-900 dark:text-white flex items-center gap-3 uppercase tracking-tighter">
-             <Icons.Calculator className="w-5 h-5 text-emerald-500" /> Audit Inputs
+        <div className="bg-white dark:bg-slate-900 p-8 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm">
+           <h2 className="text-sm font-normal mb-6 text-slate-900 dark:text-white flex items-center gap-2 uppercase tracking-widest">
+             <Icons.Calculator className="w-4 h-4 text-emerald-500" /> Audit Inputs
            </h2>
-           <div className="flex gap-2 mb-6 p-1 bg-slate-100 dark:bg-black rounded-xl">
+           <div className="flex gap-1 mb-6 p-1 bg-slate-100 dark:bg-black rounded-xl">
               {['10', '12', '6.5'].map(t => (
-                  <button key={t} onClick={() => setPaymentType(t as any)} className={`flex-1 py-2 rounded-lg font-black text-[10px] transition-all ${paymentType === t ? 'bg-white dark:bg-slate-800 text-emerald-600 shadow-sm' : 'text-slate-400'}`}>{t} BD</button>
+                  <button key={t} onClick={() => setPaymentType(t as any)} className={`flex-1 py-1.5 rounded-lg font-normal text-[10px] transition-all ${paymentType === t ? 'bg-white dark:bg-slate-800 text-emerald-600 shadow-sm' : 'text-slate-400'}`}>{t} BD</button>
               ))}
            </div>
            <div className="space-y-4">
               <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Calculated Fees (BD)</label>
-                <input type="number" placeholder="Enter Fees" value={fees} onChange={e => setFees(e.target.value)} className="w-full p-4 rounded-2xl border border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-black font-bold outline-none focus:ring-2 focus:ring-emerald-500 transition-all" />
+                <label className="text-[10px] font-normal text-slate-400 uppercase ml-1 tracking-widest">Calculated Fees (BD)</label>
+                <input type="number" placeholder="Enter Fees" value={fees} onChange={e => setFees(e.target.value)} className="w-full p-3.5 rounded-xl border border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-black font-normal outline-none focus:ring-1 focus:ring-emerald-500 transition-all" />
               </div>
               <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">13/2006 Original CC (BD)</label>
-                <input type="number" placeholder="Enter Original CC" value={ccRef} onChange={e => setCcRef(e.target.value)} className="w-full p-4 rounded-2xl border border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-black font-bold outline-none focus:ring-2 focus:ring-emerald-500 transition-all" />
+                <label className="text-[10px] font-normal text-slate-400 uppercase ml-1 tracking-widest">Original CC (BD)</label>
+                <input type="number" placeholder="Enter Original CC" value={ccRef} onChange={e => setCcRef(e.target.value)} className="w-full p-3.5 rounded-xl border border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-black font-normal outline-none focus:ring-1 focus:ring-emerald-500 transition-all" />
               </div>
            </div>
            
            {(feesVal > 0 || ccVal > 0) && (
-               <div className="mt-8 space-y-4 animate-scale-in">
-                  <div className="p-5 bg-indigo-500/5 rounded-3xl border border-indigo-500/10 flex justify-between items-center">
-                      <div className="text-[10px] font-black text-indigo-500 uppercase tracking-widest">EDD Share Result</div>
-                      <div className="text-xl font-black text-indigo-600">{eddShare.toFixed(3)} BD</div>
+               <div className="mt-8 space-y-3 animate-scale-in">
+                  <div className="p-4 bg-indigo-500/5 rounded-2xl border border-indigo-500/10 flex justify-between items-center">
+                      <div className="text-[10px] font-normal text-indigo-500 uppercase tracking-widest">Share Result</div>
+                      <div className="text-lg font-normal text-indigo-600">{eddShare.toFixed(3)} BD</div>
                   </div>
                   {finalCC > 0 && (
-                     <div className="p-6 bg-emerald-500 text-white rounded-3xl shadow-xl shadow-emerald-500/20 flex flex-col items-center">
-                        <div className="text-[10px] font-black uppercase tracking-[0.2em] opacity-80 mb-1 text-center">Final Adjusted Balance</div>
-                        <div className="text-3xl font-black">{finalCC.toFixed(3)} BD</div>
+                     <div className="p-5 bg-emerald-500 text-white rounded-2xl shadow-sm flex flex-col items-center">
+                        <div className="text-[10px] font-normal uppercase tracking-widest opacity-80 mb-1">Adjusted Balance</div>
+                        <div className="text-2xl font-normal">{finalCC.toFixed(3)} BD</div>
                      </div>
                   )}
                </div>
@@ -321,35 +323,35 @@ const CalculatorView: React.FC = () => {
 
       <div className="w-full lg:w-2/3">
         {searchResult ? (
-          <div className={`h-full rounded-[3rem] p-12 border-4 transition-all duration-700 relative overflow-hidden flex flex-col ${hasPayments ? 'bg-emerald-50 dark:bg-emerald-950/20 border-emerald-500 shadow-2xl shadow-emerald-500/10' : 'bg-slate-50 dark:bg-slate-900 border-rose-500 shadow-2xl shadow-rose-500/10'}`}>
-            <div className={`absolute -right-32 -top-32 w-96 h-96 rounded-full blur-[100px] opacity-30 ${hasPayments ? 'bg-emerald-400' : 'bg-rose-400'}`}></div>
+          <div className={`h-full rounded-[2.5rem] p-12 border transition-all duration-700 relative overflow-hidden flex flex-col ${hasPayments ? 'bg-emerald-50 dark:bg-emerald-950/20 border-emerald-500 shadow-sm' : 'bg-slate-50 dark:bg-slate-900 border-rose-500 shadow-sm'}`}>
+            <div className={`absolute -right-32 -top-32 w-80 h-80 rounded-full blur-[80px] opacity-20 ${hasPayments ? 'bg-emerald-400' : 'bg-rose-400'}`}></div>
             <div className="relative z-10">
               <div className="flex justify-between items-start mb-12">
                  <div>
-                    <h3 className="text-xs font-black uppercase tracking-[0.3em] opacity-40 mb-2">Internal Status Report</h3>
-                    <h1 className="text-6xl font-black text-slate-900 dark:text-white tracking-tighter leading-none">{searchResult.plotNumber}</h1>
-                    <p className="text-2xl font-bold opacity-70 mt-4 tracking-tight">{searchResult.ownerNameEn || 'Private Entity'}</p>
+                    <h3 className="text-[10px] font-normal uppercase tracking-widest opacity-50 mb-2">Status Report</h3>
+                    <h1 className="text-5xl font-normal text-slate-900 dark:text-white tracking-tight leading-none">{searchResult.plotNumber}</h1>
+                    <p className="text-xl font-normal opacity-80 mt-3 tracking-tight">{searchResult.ownerNameEn || 'Private Entity'}</p>
                  </div>
-                 <div className={`w-28 h-28 rounded-[2rem] flex flex-col items-center justify-center shadow-2xl animate-bounce-subtle ${hasPayments ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white'}`}>
-                    {hasPayments ? <Icons.Check className="w-12 h-12 mb-1" /> : <Icons.Close className="w-12 h-12 mb-1" />}
-                    <span className="text-[10px] font-black">{hasPayments ? 'VERIFIED' : 'PENDING'}</span>
+                 <div className={`w-24 h-24 rounded-3xl flex flex-col items-center justify-center shadow-md animate-bounce-subtle ${hasPayments ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white'}`}>
+                    {hasPayments ? <Icons.Check className="w-10 h-10 mb-1" /> : <Icons.Close className="w-10 h-10 mb-1" />}
+                    <span className="text-[9px] font-normal tracking-wider">{hasPayments ? 'VERIFIED' : 'PENDING'}</span>
                  </div>
               </div>
-              <div className={`p-10 rounded-[2.5rem] border-2 text-center mb-12 transform hover:scale-105 transition-all duration-500 ${hasPayments ? 'bg-white/80 dark:bg-black/40 border-emerald-100 dark:border-emerald-500/20 shadow-2xl shadow-emerald-200' : 'bg-white/80 dark:bg-black/40 border-rose-100 dark:border-rose-500/20 shadow-2xl shadow-rose-200'}`}>
-                  <span className={`text-4xl font-black uppercase tracking-tighter ${hasPayments ? 'text-emerald-600' : 'text-rose-600'}`}>
-                    {hasPayments ? 'Infrastructure Fees Cleared' : 'Incomplete Payment Profile'}
+              <div className={`p-10 rounded-3xl border text-center mb-10 transition-all ${hasPayments ? 'bg-white/80 dark:bg-black/40 border-emerald-100 dark:border-emerald-500/10' : 'bg-white/80 dark:bg-black/40 border-rose-100 dark:border-rose-500/10'}`}>
+                  <span className={`text-3xl font-normal uppercase tracking-tight ${hasPayments ? 'text-emerald-600' : 'text-rose-600'}`}>
+                    {hasPayments ? 'Infrastructure Fees Cleared' : 'Incomplete Profile'}
                   </span>
-                  <p className="text-slate-400 text-xs font-bold mt-2 uppercase tracking-widest">Database Sync ID: {searchResult.id.split('-')[0]}</p>
+                  <p className="text-slate-400 text-[10px] font-normal mt-2 uppercase tracking-widest">Database ID: {searchResult.id.split('-')[0]}</p>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {['First Installment', 'Second Installment', 'Final Settlement'].map((label, i) => {
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                  {['First', 'Second', 'Final'].map((label, i) => {
                       const keys = ['initialPaymentDate', 'secondPayment', 'thirdPayment'];
                       const val = (searchResult as any)[keys[i]];
                       const isFound = val && val.trim() !== '';
                       return (
-                        <div key={label} className={`p-6 rounded-3xl border bg-white/50 dark:bg-black/20 backdrop-blur-md transition-all ${isFound ? 'border-emerald-200 dark:border-emerald-500/30' : 'border-slate-200 dark:border-white/5 opacity-50'}`}>
-                           <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">{label}</div>
-                           <div className={`font-black text-xl ${isFound ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-300 italic'}`}>
+                        <div key={label} className={`p-6 rounded-2xl border bg-white/50 dark:bg-black/20 backdrop-blur-md transition-all ${isFound ? 'border-emerald-200 dark:border-emerald-500/20' : 'border-slate-200 dark:border-white/5 opacity-50'}`}>
+                           <div className="text-[10px] font-normal uppercase tracking-widest text-slate-400 mb-2">{label}</div>
+                           <div className={`font-normal text-lg ${isFound ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-300 italic'}`}>
                              {isFound ? val : 'NOT RECORDED'}
                            </div>
                         </div>
@@ -359,13 +361,13 @@ const CalculatorView: React.FC = () => {
             </div>
           </div>
         ) : (
-          <div className="h-full rounded-[3rem] border-4 border-dashed border-slate-200 dark:border-white/10 flex flex-col items-center justify-center text-slate-300 dark:text-slate-700 gap-6 p-12">
-             <div className="w-32 h-32 rounded-full bg-slate-100 dark:bg-white/5 flex items-center justify-center">
-                <Icons.Search className="w-12 h-12 opacity-30" />
+          <div className="h-full rounded-[2.5rem] border-2 border-dashed border-slate-200 dark:border-white/10 flex flex-col items-center justify-center text-slate-300 dark:text-slate-700 gap-6 p-12">
+             <div className="w-24 h-24 rounded-full bg-slate-100 dark:bg-white/5 flex items-center justify-center">
+                <Icons.Search className="w-10 h-10 opacity-20" />
              </div>
              <div className="text-center">
-                <p className="text-2xl font-black tracking-tight uppercase">Ready for validation</p>
-                <p className="text-sm font-bold opacity-60">Enter a plot ID to hook into the financial database.</p>
+                <p className="text-xl font-normal tracking-wide uppercase">Audit Readiness</p>
+                <p className="text-xs font-normal opacity-60 mt-1">Enter a Plot ID to validate payments.</p>
              </div>
           </div>
         )}
@@ -380,9 +382,8 @@ const App: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [showUpload, setShowUpload] = useState(false);
-  const [paidPlots, setPaidPlots] = useState<Set<string>>(new Set());
+  const [infraHookData, setInfraHookData] = useState<Record<string, { appNo: string, isPaid: boolean }>>({});
 
-  // Progress State
   const [importProgress, setImportProgress] = useState<{ 
     total: number, current: number, active: boolean, success: number, error: number, finished: boolean,
     projectsDetected: number, infraDetected: number, summaryPhase: boolean, stagedProjects: any[], stagedInfra: any[]
@@ -397,7 +398,7 @@ const App: React.FC = () => {
     setRecords(data);
     const plots = data.map(r => normalizePlot(r.plotNumber)).filter(Boolean);
     if (plots.length > 0) {
-      setPaidPlots(await getPaidPlotNumbers(plots));
+      setInfraHookData(await getInfraHookData(plots));
     }
     setLoading(false);
   };
@@ -412,11 +413,8 @@ const App: React.FC = () => {
       
       const wb = XLSX.read(resultData, { type: 'binary' });
       const rawData = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
-      
       const stagedProjects: any[] = [];
       const stagedInfra: any[] = [];
-
-      // Create a lowercase version of the valid statuses for case-insensitive matching
       const lowerValidStatuses = VALID_IMPORT_STATUSES.map(s => s.toLowerCase().trim());
 
       rawData.forEach((row: any) => {
@@ -424,36 +422,33 @@ const App: React.FC = () => {
         const plot = normalizePlot(getValueByFuzzyKey(row, "Plot Number", "Parcel", "Plot", "Plot No"));
         const sourceStatusRaw = getValueByFuzzyKey(row, "Status", "Workflow Status", "Source Status").trim();
         const sourceStatusLower = sourceStatusRaw.toLowerCase();
-        
-        // Removed A4/A5 filter as requested.
-        // CRITERIA: Status must be in VALID_IMPORT_STATUSES list (Case Insensitive)
         const isValidStatus = lowerValidStatuses.includes(sourceStatusLower);
 
         if (isValidStatus) {
           stagedProjects.push({
-            label: getValueByFuzzyKey(row, "Label", "Title", "Name", "Project Name") || 'Untitled Project',
-            // MAP Source Status to Dashboard Status Category
+            label: getValueByFuzzyKey(row, "Label", "Title", "Name", "Project Name") || 'Untitled',
             status: mapSourceToUIStatus(sourceStatusRaw),
             plotNumber: plot,
             referenceNumber: ref,
             zone: getValueByFuzzyKey(row, "Zone", "Investment Zone") || '',
             block: getValueByFuzzyKey(row, "Block", "Block Number") || '',
-            scheduleStartDate: parseDateSafe(getValueByFuzzyKey(row, "Schedule Start", "Start Date", "Workflow Entry")),
+            scheduleStartDate: parseDateSafe(getValueByFuzzyKey(row, "Schedule Start", "Start Date")),
             wayleaveNumber: getValueByFuzzyKey(row, "Wayleave", "Wayleave No") || '',
             accountNumber: getValueByFuzzyKey(row, "Account", "Account Number") || '',
             requireUSP: false,
             createdAt: new Date().toISOString()
           });
         } 
-        // INFRA CRITERIA: Has a Plot Number (Global reference database)
         else if (plot && plot !== '') {
+          // Logic for Infrastructure hook records (Infra Engine)
           stagedInfra.push({
+            applicationNumber: getValueByFuzzyKey(row, "Application Number", "App No", "Reference"),
             plotNumber: plot,
-            ownerNameEn: getValueByFuzzyKey(row, "Owner", "Name", "Client", "Applicant"),
-            initialPaymentDate: getValueByFuzzyKey(row, "Payment Date", "Paid Date", "First Payment", "Initial Payment"),
-            secondPayment: getValueByFuzzyKey(row, "Second Payment", "Installment 2"),
-            thirdPayment: getValueByFuzzyKey(row, "Third Payment", "Final Payment", "Settlement"),
-            momaaLoad: getValueByFuzzyKey(row, "Load", "MOMAA Load"),
+            ownerNameEn: getValueByFuzzyKey(row, "Owner", "Name"),
+            // Map payment statuses using the exact requested names + some fallbacks
+            initialPaymentDate: getValueByFuzzyKey(row, "First Installment", "Initial Payment Date", "Initial Payment", "Payment Date"),
+            secondPayment: getValueByFuzzyKey(row, "Second Installment", "2nd Installment", "Second Payment"),
+            thirdPayment: getValueByFuzzyKey(row, "Final Settlement", "Third Installment", "3rd Installment", "Settlement", "Third Payment"),
             createdAt: new Date().toISOString()
           });
         }
@@ -478,8 +473,6 @@ const App: React.FC = () => {
 
   const startSync = async () => {
     setImportProgress(prev => ({ ...prev, summaryPhase: false }));
-    
-    // 1. Sync Projects
     for (let i = 0; i < importProgress.stagedProjects.length; i++) {
       const item = importProgress.stagedProjects[i];
       const result = await addRecord(item as RecordItem);
@@ -490,8 +483,6 @@ const App: React.FC = () => {
         error: !result ? prev.error + 1 : prev.error
       }));
     }
-
-    // 2. Sync Infra Data in batch
     if (importProgress.stagedInfra.length > 0) {
       const success = await saveInfraReferences(importProgress.stagedInfra);
       setImportProgress(prev => ({
@@ -501,7 +492,6 @@ const App: React.FC = () => {
         error: !success ? prev.error + prev.stagedInfra.length : prev.error
       }));
     }
-
     await loadData();
     setImportProgress(prev => ({ ...prev, finished: true }));
   };
@@ -509,26 +499,26 @@ const App: React.FC = () => {
   if (loading) return (
     <div className="fixed inset-0 bg-slate-900 flex items-center justify-center">
       <div className="text-center">
-        <Icons.Spinner className="w-12 h-12 text-indigo-500 animate-spin mx-auto mb-4" />
-        <p className="text-slate-400 font-black text-xs uppercase tracking-widest">Rajab Management Booting...</p>
+        <Icons.Spinner className="w-10 h-10 text-indigo-500 animate-spin mx-auto mb-4" />
+        <p className="text-slate-400 font-normal text-xs uppercase tracking-[0.2em]">Booting Nexus...</p>
       </div>
     </div>
   );
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-black font-sans text-slate-900 dark:text-slate-100 flex overflow-hidden">
-      <aside className="w-24 lg:w-72 bg-slate-900/95 dark:bg-black/40 backdrop-blur-2xl text-white flex flex-col fixed h-full z-50 border-r border-white/5">
-        <div className="p-10 flex flex-col items-center lg:items-start gap-4">
-            <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center shadow-2xl overflow-hidden p-2">
+      <aside className="w-20 lg:w-64 bg-slate-900/95 dark:bg-slate-950/80 backdrop-blur-xl text-white flex flex-col fixed h-full z-50 border-r border-white/5">
+        <div className="p-8 flex flex-col items-center lg:items-start gap-3">
+            <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center shadow-lg overflow-hidden p-1.5">
                 <img src={EWA_LOGO} alt="EWA Logo" className="w-full h-full object-contain" />
             </div>
             <div className="hidden lg:block">
-                <h1 className="font-black text-xl tracking-tighter leading-none uppercase">Rajab Management</h1>
-                <p className="text-[10px] font-black text-indigo-400 tracking-[0.3em]">NEXUS SYSTEM</p>
+                <h1 className="font-normal text-lg tracking-tight uppercase leading-none">Rajab Management</h1>
+                <p className="text-[9px] font-normal text-indigo-400 tracking-widest mt-1">NEXUS SYSTEM</p>
             </div>
         </div>
         
-        <nav className="flex-1 px-6 space-y-4">
+        <nav className="flex-1 px-4 space-y-2 mt-4">
           {[
             { id: 'dashboard', icon: Icons.Dashboard, label: 'Control Hub' },
             { id: 'calculator', icon: Icons.Calculator, label: 'Audit Engine' }
@@ -536,162 +526,105 @@ const App: React.FC = () => {
             <button 
               key={item.id}
               onClick={() => setCurrentView(item.id as any)}
-              className={`w-full flex items-center gap-5 px-6 py-4 rounded-2xl transition-all duration-500 group ${
+              className={`w-full flex items-center gap-4 px-5 py-3.5 rounded-xl transition-all duration-300 group ${
                 currentView === item.id 
-                  ? 'bg-white/10 text-white border border-white/10 shadow-2xl' 
-                  : 'text-slate-500 hover:text-white'
+                  ? 'bg-white/10 text-white border border-white/5 shadow-sm' 
+                  : 'text-slate-500 hover:text-white hover:bg-white/5'
               }`}
             >
-              <item.icon className={`w-6 h-6 transition-colors ${currentView === item.id ? 'text-indigo-400' : 'group-hover:text-indigo-400'}`} />
-              <span className="hidden lg:block font-black text-xs uppercase tracking-widest">{item.label}</span>
+              <item.icon className={`w-5 h-5 transition-colors ${currentView === item.id ? 'text-indigo-400' : 'group-hover:text-indigo-400'}`} />
+              <span className="hidden lg:block font-normal text-xs uppercase tracking-widest">{item.label}</span>
             </button>
           ))}
         </nav>
 
-        <div className="p-8">
-            <div className="hidden lg:block p-6 rounded-3xl bg-indigo-500/10 border border-indigo-500/20 text-center">
-                <p className="text-[10px] font-black uppercase text-indigo-400 tracking-[0.2em] mb-2">Live Status</p>
+        <div className="p-6">
+            <div className="hidden lg:block p-4 rounded-2xl bg-indigo-500/5 border border-indigo-500/10 text-center">
+                <p className="text-[9px] font-normal uppercase text-indigo-400 tracking-widest mb-1.5">System Status</p>
                 <div className="flex items-center justify-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-                    <span className="font-bold text-xs">CONNECTED</span>
+                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
+                    <span className="font-normal text-[10px]">OPERATIONAL</span>
                 </div>
             </div>
         </div>
       </aside>
 
-      <main className="flex-1 ml-24 lg:ml-72 p-12 overflow-y-auto h-screen custom-scrollbar">
+      <main className="flex-1 ml-20 lg:ml-64 p-10 overflow-y-auto h-screen custom-scrollbar">
         <div className="max-w-7xl mx-auto">
            {currentView === 'dashboard' ? (
              <DashboardView 
                records={records} 
-               paidPlots={paidPlots} 
+               infraHookData={infraHookData} 
                searchTerm={searchTerm} 
                onSearch={setSearchTerm} 
                onUpload={() => setShowUpload(true)}
                onEdit={() => {}}
-               onDelete={(id) => { if(confirm('Delete?')) deleteRecord(id).then(loadData); }}
+               onDelete={(id) => { if(confirm('Delete record?')) deleteRecord(id).then(loadData); }}
              />
            ) : <CalculatorView />}
         </div>
 
         {showUpload && (
-            <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[60] flex items-center justify-center p-4 animate-fade-in">
-                <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] p-8 max-w-2xl w-full shadow-2xl animate-scale-in border border-white/10 overflow-hidden custom-scrollbar max-h-[90vh] overflow-y-auto">
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4 animate-fade-in">
+                <div className="bg-white dark:bg-slate-900 rounded-[2rem] p-8 max-w-xl w-full shadow-2xl animate-scale-in border border-white/5 overflow-y-auto max-h-[90vh] custom-scrollbar">
                     {importProgress.active ? (
-                      <div className="text-center py-6">
+                      <div className="text-center py-4">
                         {importProgress.summaryPhase ? (
                           <div className="animate-fade-in text-left">
                              <div className="text-center mb-8">
-                                <h3 className="text-2xl font-black mb-1 text-slate-900 dark:text-white uppercase tracking-tighter">Criteria Engine Scan</h3>
-                                <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Validating records against system protocols</p>
+                                <h3 className="text-xl font-normal mb-1 text-slate-900 dark:text-white uppercase tracking-tight">Data Scan Ready</h3>
+                                <p className="text-[10px] text-slate-400 font-normal uppercase tracking-widest">Awaiting database commitment</p>
                              </div>
                              
-                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                                <div className="p-6 bg-indigo-50 dark:bg-indigo-950/30 rounded-3xl border border-indigo-100 dark:border-indigo-500/20 flex justify-between items-center">
-                                    <div className="text-left">
-                                        <div className="font-black text-indigo-600 uppercase text-[10px] tracking-widest">Project Records</div>
-                                        <div className="text-4xl font-black text-slate-900 dark:text-white">{importProgress.projectsDetected}</div>
-                                        <div className="mt-2 text-[10px] font-bold text-slate-500">Meeting Status mapping rules</div>
-                                    </div>
-                                    <Icons.Dashboard className="w-10 h-10 text-indigo-400 opacity-30" />
+                             <div className="grid grid-cols-2 gap-4 mb-8">
+                                <div className="p-5 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-white/5">
+                                    <div className="font-normal text-indigo-500 uppercase text-[9px] tracking-widest mb-1">Projects</div>
+                                    <div className="text-3xl font-normal text-slate-900 dark:text-white">{importProgress.projectsDetected}</div>
                                 </div>
-                                <div className="p-6 bg-emerald-50 dark:bg-emerald-950/30 rounded-3xl border border-emerald-100 dark:border-emerald-500/20 flex justify-between items-center">
-                                    <div className="text-left">
-                                        <div className="font-black text-emerald-600 uppercase text-[10px] tracking-widest">Infra References</div>
-                                        <div className="text-4xl font-black text-slate-900 dark:text-white">{importProgress.infraDetected}</div>
-                                        <div className="mt-2 text-[10px] font-bold text-slate-500">Meeting Plot ID requirement</div>
-                                    </div>
-                                    <Icons.Calculator className="w-10 h-10 text-emerald-400 opacity-30" />
+                                <div className="p-5 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-white/5">
+                                    <div className="font-normal text-emerald-500 uppercase text-[9px] tracking-widest mb-1">Infra Data</div>
+                                    <div className="text-3xl font-normal text-slate-900 dark:text-white">{importProgress.infraDetected}</div>
                                 </div>
                              </div>
 
-                             <div className="bg-slate-50 dark:bg-white/5 rounded-3xl p-6 border border-slate-200 dark:border-white/5 mb-8">
-                                <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-4 flex items-center gap-2">
-                                  <Icons.Alert className="w-3 h-3 text-indigo-500" />
-                                  Requirements for "Project" status
-                                </h4>
-                                <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-[10px] font-bold text-slate-600 dark:text-slate-400">
-                                   {VALID_IMPORT_STATUSES.map(s => (
-                                     <div key={s} className="flex items-center gap-2">
-                                       <div className="w-1 h-1 rounded-full bg-slate-300"></div>
-                                       {s}
-                                     </div>
-                                   ))}
-                                </div>
-                             </div>
-
-                             <div className="flex gap-4">
-                                <button onClick={startSync} className="flex-1 py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl shadow-indigo-600/20 transition-all hover:bg-indigo-700">Commit to Database</button>
-                                <button onClick={() => setShowUpload(false)} className="px-8 py-4 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-2xl font-black uppercase text-xs">Dismiss</button>
+                             <div className="flex gap-3">
+                                <button onClick={startSync} className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-normal uppercase text-[11px] tracking-widest shadow-md transition-all hover:bg-indigo-700">Sync Now</button>
+                                <button onClick={() => setShowUpload(false)} className="px-6 py-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl font-normal uppercase text-[11px] tracking-widest">Cancel</button>
                              </div>
                           </div>
                         ) : !importProgress.finished ? (
                           <>
-                            <div className="w-24 h-24 rounded-full border-4 border-slate-100 dark:border-white/5 flex items-center justify-center mx-auto mb-8 relative">
-                               <div className="absolute inset-0 border-4 border-indigo-500 rounded-full border-t-transparent animate-spin"></div>
-                               <span className="text-xl font-black">{Math.round((importProgress.current / importProgress.total) * 100)}%</span>
+                            <div className="w-20 h-20 rounded-full border-2 border-slate-100 dark:border-white/5 flex items-center justify-center mx-auto mb-8 relative">
+                               <div className="absolute inset-0 border-2 border-indigo-500 rounded-full border-t-transparent animate-spin"></div>
+                               <span className="text-lg font-normal">{Math.round((importProgress.current / importProgress.total) * 100)}%</span>
                             </div>
-                            <h3 className="text-2xl font-black mb-1 text-slate-900 dark:text-white uppercase tracking-tighter">Syncing Database</h3>
-                            <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mb-8">Injecting {importProgress.current} of {importProgress.total} records</p>
-                            
-                            <div className="w-full h-3 bg-slate-100 dark:bg-white/5 rounded-full overflow-hidden mb-6">
-                                <div 
-                                  className="h-full bg-gradient-to-r from-indigo-500 to-emerald-500 transition-all duration-300" 
-                                  style={{ width: `${(importProgress.current / importProgress.total) * 100}%` }}
-                                ></div>
-                            </div>
+                            <h3 className="text-xl font-normal mb-1 text-slate-900 dark:text-white uppercase tracking-tight">Syncing...</h3>
+                            <p className="text-[10px] text-slate-400 font-normal uppercase tracking-widest mb-8">Injecting {importProgress.current} records</p>
                           </>
                         ) : (
                           <div className="animate-scale-in">
-                             <div className="w-20 h-20 bg-emerald-500 text-white rounded-full flex items-center justify-center mx-auto mb-6 shadow-xl shadow-emerald-500/20">
-                                <Icons.Check className="w-10 h-10" />
+                             <div className="w-16 h-16 bg-emerald-500 text-white rounded-full flex items-center justify-center mx-auto mb-6 shadow-md">
+                                <Icons.Check className="w-8 h-8" />
                              </div>
-                             <h3 className="text-2xl font-black mb-1 text-slate-900 dark:text-white uppercase tracking-tighter">Sync Complete</h3>
-                             <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mb-8">Import Operation Finished</p>
+                             <h3 className="text-xl font-normal mb-1 text-slate-900 dark:text-white uppercase tracking-tight">Task Complete</h3>
+                             <p className="text-[10px] text-slate-400 font-normal uppercase tracking-widest mb-8">Import operation finished successfully</p>
                              
-                             <div className="grid grid-cols-2 gap-4">
-                                <div className="bg-emerald-500/10 p-4 rounded-3xl border border-emerald-500/20">
-                                    <div className="text-[10px] font-black text-emerald-500 uppercase tracking-widest mb-1">Success</div>
-                                    <div className="text-2xl font-black text-emerald-600">{importProgress.success}</div>
-                                </div>
-                                <div className="bg-rose-500/10 p-4 rounded-3xl border border-rose-500/20">
-                                    <div className="text-[10px] font-black text-rose-500 uppercase tracking-widest mb-1">Failed</div>
-                                    <div className="text-2xl font-black text-rose-600">{importProgress.error}</div>
-                                </div>
-                             </div>
-
-                             <button 
-                                onClick={() => {
-                                  setImportProgress({ total:0, current:0, active:false, success:0, error:0, finished:false, projectsDetected:0, infraDetected:0, summaryPhase: false, stagedProjects:[], stagedInfra:[] });
-                                  setShowUpload(false);
-                                }}
-                                className="w-full mt-8 py-4 bg-slate-900 dark:bg-white text-white dark:text-black rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl transition-all active:scale-95"
-                              >
-                                Close Interface
-                              </button>
+                             <button onClick={() => { setImportProgress({ total:0, current:0, active:false, success:0, error:0, finished:false, projectsDetected:0, infraDetected:0, summaryPhase: false, stagedProjects:[], stagedInfra:[] }); setShowUpload(false); }} className="w-full py-3 bg-slate-900 dark:bg-white text-white dark:text-black rounded-xl font-normal uppercase text-[11px] tracking-widest transition-all">Dismiss</button>
                           </div>
                         )}
                       </div>
                     ) : (
                       <div className="text-center">
-                          <div className="w-20 h-20 bg-indigo-50 dark:bg-indigo-900/20 rounded-3xl flex items-center justify-center mx-auto mb-6">
-                              <Icons.Excel className="w-10 h-10 text-indigo-600" />
+                          <div className="w-16 h-16 bg-indigo-50 dark:bg-indigo-900/20 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                              <Icons.Excel className="w-8 h-8 text-indigo-600" />
                           </div>
-                          <h3 className="text-2xl font-black mb-2 text-slate-900 dark:text-white tracking-tighter uppercase">Seed Database</h3>
-                          <p className="text-sm text-slate-500 mb-8 font-medium">Inject project records from your local Excel file.</p>
+                          <h3 className="text-xl font-normal mb-2 text-slate-900 dark:text-white tracking-tight uppercase">Import Dataset</h3>
+                          <p className="text-xs text-slate-500 mb-8 font-normal">Select an Excel file to synchronize records.</p>
                           
-                          <div className="p-6 bg-slate-50 dark:bg-white/5 rounded-3xl mb-8 text-left">
-                            <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-3">Expected Rules:</h4>
-                            <ul className="text-[11px] font-bold text-slate-500 space-y-1">
-                              <li>• Column headers like "Status" and "Reference Number"</li>
-                              <li>• Row Status must be one of the <span className="text-indigo-500">12 defined project stages</span></li>
-                            </ul>
-                          </div>
-
                           <input type="file" id="upload-input" className="hidden" accept=".xlsx" onChange={(e) => e.target.files?.[0] && handleExcelUpload(e.target.files[0])} />
-                          <div className="flex flex-col gap-3">
-                              <label htmlFor="upload-input" className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black cursor-pointer hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-600/20 uppercase text-xs tracking-widest text-center">Select Dataset</label>
-                              <button onClick={() => setShowUpload(false)} className="w-full py-4 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-2xl font-black hover:bg-slate-200 transition-all uppercase text-xs tracking-widest">Dismiss</button>
+                          <div className="flex flex-col gap-2">
+                              <label htmlFor="upload-input" className="w-full py-3.5 bg-indigo-600 text-white rounded-xl font-normal cursor-pointer hover:bg-indigo-700 transition-all shadow-md uppercase text-[11px] tracking-widest text-center">Browse Files</label>
+                              <button onClick={() => setShowUpload(false)} className="w-full py-3.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl font-normal hover:bg-slate-200 transition-all uppercase text-[11px] tracking-widest">Close</button>
                           </div>
                       </div>
                     )}

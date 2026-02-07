@@ -114,11 +114,25 @@ export const deleteRecord = async (id: string): Promise<boolean> => {
   return true;
 };
 
-export const getPaidPlotNumbers = async (plotNumbers: string[]): Promise<Set<string>> => {
-  const validPlots = [...new Set(plotNumbers.map(p => normalizePlot(p)).filter(p => p !== ''))];
-  if (validPlots.length === 0) return new Set();
+/**
+ * Stricter check for whether a payment field contains a real value.
+ */
+const isValidPaymentMarker = (val: any): boolean => {
+  if (val === null || val === undefined) return false;
+  const s = String(val).trim().toLowerCase();
+  // Filter out common "empty" placeholders often found in spreadsheets
+  const emptyPlaceholders = ['', 'null', 'undefined', '-', '0', '0.0', 'n/a', 'none', 'no', 'false'];
+  return !emptyPlaceholders.includes(s);
+};
 
-  const paidPlots = new Set<string>();
+/**
+ * Returns a map of plot numbers to their Infra metadata for the 'Infra Hook' logic.
+ */
+export const getInfraHookData = async (plotNumbers: string[]): Promise<Record<string, { appNo: string, isPaid: boolean }>> => {
+  const validPlots = [...new Set(plotNumbers.map(p => normalizePlot(p)).filter(p => p !== ''))];
+  if (validPlots.length === 0) return {};
+
+  const hookData: Record<string, { appNo: string, isPaid: boolean }> = {};
   const chunkSize = 200;
 
   for (let i = 0; i < validPlots.length; i += chunkSize) {
@@ -126,7 +140,7 @@ export const getPaidPlotNumbers = async (plotNumbers: string[]): Promise<Set<str
     
     const { data, error } = await supabase
       .from('infra_references')
-      .select('plotNumber, initialPaymentDate, secondPayment, thirdPayment')
+      .select('plotNumber, applicationNumber, initialPaymentDate, secondPayment, thirdPayment')
       .in('plotNumber', chunk);
 
     if (error) {
@@ -136,19 +150,30 @@ export const getPaidPlotNumbers = async (plotNumbers: string[]): Promise<Set<str
 
     if (data) {
       data.forEach((row: any) => {
+        // Strict logic: YES if First Installment OR Second Installment OR Final Settlement has value
         const hasPaymentData = 
-          (row.initialPaymentDate && String(row.initialPaymentDate).trim() !== '') || 
-          (row.secondPayment && String(row.secondPayment).trim() !== '') || 
-          (row.thirdPayment && String(row.thirdPayment).trim() !== '');
+          isValidPaymentMarker(row.initialPaymentDate) || 
+          isValidPaymentMarker(row.secondPayment) || 
+          isValidPaymentMarker(row.thirdPayment);
 
-        if (row.plotNumber && hasPaymentData) {
-          paidPlots.add(normalizePlot(row.plotNumber));
-        }
+        hookData[normalizePlot(row.plotNumber)] = {
+          appNo: row.applicationNumber || 'REF MISSING',
+          isPaid: !!hasPaymentData
+        };
       });
     }
   }
 
-  return paidPlots;
+  return hookData;
+};
+
+export const getPaidPlotNumbers = async (plotNumbers: string[]): Promise<Set<string>> => {
+  const data = await getInfraHookData(plotNumbers);
+  const paidSet = new Set<string>();
+  Object.keys(data).forEach(plot => {
+    if (data[plot].isPaid) paidSet.add(plot);
+  });
+  return paidSet;
 };
 
 export const searchInfraReferences = async (plotNumber: string): Promise<InfraReferenceItem[]> => {

@@ -1,23 +1,22 @@
-import { GoogleGenAI } from "@google/genai";
-import { RecordItem, InfraReferenceItem } from "../types";
 
-// Ensure TypeScript recognizes process.env if @types/node is missing
+import { GoogleGenAI } from "@google/genai";
+import { RecordItem } from "../types";
+
+// Ensure TypeScript recognizes process.env
 declare var process: {
   env: {
     [key: string]: string | undefined;
   }
 };
 
+/**
+ * Generates data insights from records using Gemini API.
+ * Follows @google/genai guidelines for client initialization and response handling.
+ */
 export const generateDataInsights = async (records: RecordItem[], query?: string): Promise<string> => {
-  const apiKey = process.env.API_KEY;
-
-  if (!apiKey) {
-    console.warn("API Key is missing. AI insights will not work.");
-    return "API Key is missing. Please configure the environment variable API_KEY in your deployment settings.";
-  }
-
   try {
-    const ai = new GoogleGenAI({ apiKey });
+    // Guideline: Always use const ai = new GoogleGenAI({apiKey: process.env.API_KEY});
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
     
     const contextData = JSON.stringify(records.slice(0, 50));
     
@@ -33,6 +32,7 @@ export const generateDataInsights = async (records: RecordItem[], query?: string
       }
     });
 
+    // Guideline: Use response.text property directly
     return response.text || "No insights generated.";
   } catch (error) {
     console.error("Gemini API Error:", error);
@@ -40,15 +40,13 @@ export const generateDataInsights = async (records: RecordItem[], query?: string
   }
 };
 
+/**
+ * Generates a professional report for a record using Gemini API.
+ */
 export const generateRecordReport = async (record: any): Promise<string> => {
-  const apiKey = process.env.API_KEY;
-
-  if (!apiKey) {
-    return "API Key is missing. Cannot generate AI report.";
-  }
-
   try {
-    const ai = new GoogleGenAI({ apiKey });
+    // Guideline: Create a new GoogleGenAI instance right before making an API call
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
     
     // Prepare a generic prompt that works for both active Records and Excel/Infra references
     const prompt = `
@@ -96,6 +94,7 @@ export const generateRecordReport = async (record: any): Promise<string> => {
       contents: prompt,
     });
 
+    // Guideline: Use response.text property directly
     return response.text || "No report generated.";
   } catch (error) {
     console.error("Gemini API Error:", error);
