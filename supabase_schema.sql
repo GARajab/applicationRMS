@@ -24,101 +24,115 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'requireUSP') THEN
         ALTER TABLE public.records ADD COLUMN "requireUSP" BOOLEAN DEFAULT false;
     END IF;
-
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'sentToUSPDate') THEN
         ALTER TABLE public.records ADD COLUMN "sentToUSPDate" TIMESTAMPTZ;
     END IF;
-
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'justification') THEN
         ALTER TABLE public.records ADD COLUMN "justification" TEXT;
     END IF;
 
-    -- New Columns based on recent request
+    -- Batch 1: Previous Infra/Excel Fields
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'applicationNumber') THEN
         ALTER TABLE public.records ADD COLUMN "applicationNumber" TEXT;
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'bpRequestNumber') THEN
-        ALTER TABLE public.records ADD COLUMN "bpRequestNumber" TEXT;
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'versionNumber') THEN
-        ALTER TABLE public.records ADD COLUMN "versionNumber" TEXT;
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'constructionType') THEN
-        ALTER TABLE public.records ADD COLUMN "constructionType" TEXT;
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'ewaFeeStatus') THEN
-        ALTER TABLE public.records ADD COLUMN "ewaFeeStatus" TEXT;
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'applicationStatus') THEN
-        ALTER TABLE public.records ADD COLUMN "applicationStatus" TEXT;
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'landOwnerId') THEN
-        ALTER TABLE public.records ADD COLUMN "landOwnerId" TEXT;
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'ownerNameEn') THEN
-        ALTER TABLE public.records ADD COLUMN "ownerNameEn" TEXT;
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'ownerNameAr') THEN
-        ALTER TABLE public.records ADD COLUMN "ownerNameAr" TEXT;
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'numberOfAddresses') THEN
-        ALTER TABLE public.records ADD COLUMN "numberOfAddresses" TEXT;
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'mouGatedCommunity') THEN
-        ALTER TABLE public.records ADD COLUMN "mouGatedCommunity" TEXT;
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'buildingNumber') THEN
-        ALTER TABLE public.records ADD COLUMN "buildingNumber" TEXT;
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'roadNumber') THEN
-        ALTER TABLE public.records ADD COLUMN "roadNumber" TEXT;
     END IF;
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'plotNumber') THEN
         ALTER TABLE public.records ADD COLUMN "plotNumber" TEXT;
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'titleDeed') THEN
-        ALTER TABLE public.records ADD COLUMN "titleDeed" TEXT;
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'buildableArea') THEN
-        ALTER TABLE public.records ADD COLUMN "buildableArea" TEXT;
-    END IF;
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'momaaLoad') THEN
         ALTER TABLE public.records ADD COLUMN "momaaLoad" TEXT;
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'applicationDate') THEN
-        ALTER TABLE public.records ADD COLUMN "applicationDate" TEXT; -- Storing as text to preserve original format or TIMESTAMPTZ if strictly date
+
+    -- Batch 2: New Dashboard Columns (Subtype, Type, Phase, etc.)
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'subtype') THEN
+        ALTER TABLE public.records ADD COLUMN "subtype" TEXT;
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'nationality') THEN
-        ALTER TABLE public.records ADD COLUMN "nationality" TEXT;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'type') THEN
+        ALTER TABLE public.records ADD COLUMN "type" TEXT;
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'propertyCategory') THEN
-        ALTER TABLE public.records ADD COLUMN "propertyCategory" TEXT;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'phase') THEN
+        ALTER TABLE public.records ADD COLUMN "phase" TEXT;
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'usageNature') THEN
-        ALTER TABLE public.records ADD COLUMN "usageNature" TEXT;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'scheduleEndDate') THEN
+        ALTER TABLE public.records ADD COLUMN "scheduleEndDate" TEXT;
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'investmentZone') THEN
-        ALTER TABLE public.records ADD COLUMN "investmentZone" TEXT;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'userConnected') THEN
+        ALTER TABLE public.records ADD COLUMN "userConnected" TEXT;
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'initialPaymentDate') THEN
-        ALTER TABLE public.records ADD COLUMN "initialPaymentDate" TEXT;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'createdBy') THEN
+        ALTER TABLE public.records ADD COLUMN "createdBy" TEXT;
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'secondPayment') THEN
-        ALTER TABLE public.records ADD COLUMN "secondPayment" TEXT;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'capitalContribution') THEN
+        ALTER TABLE public.records ADD COLUMN "capitalContribution" TEXT;
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'thirdPayment') THEN
-        ALTER TABLE public.records ADD COLUMN "thirdPayment" TEXT;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'nominatedContractor') THEN
+        ALTER TABLE public.records ADD COLUMN "nominatedContractor" TEXT;
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'errorLog') THEN
-        ALTER TABLE public.records ADD COLUMN "errorLog" TEXT;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'urgent') THEN
+        ALTER TABLE public.records ADD COLUMN "urgent" BOOLEAN DEFAULT false;
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'partialExemption') THEN
-        ALTER TABLE public.records ADD COLUMN "partialExemption" TEXT;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'lastShutdown') THEN
+        ALTER TABLE public.records ADD COLUMN "lastShutdown" TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'planningEngineer') THEN
+        ALTER TABLE public.records ADD COLUMN "planningEngineer" TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'constructionEngineer') THEN
+        ALTER TABLE public.records ADD COLUMN "constructionEngineer" TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'supervisor') THEN
+        ALTER TABLE public.records ADD COLUMN "supervisor" TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'plannedTotalCost') THEN
+        ALTER TABLE public.records ADD COLUMN "plannedTotalCost" TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'plannedMaterialCost') THEN
+        ALTER TABLE public.records ADD COLUMN "plannedMaterialCost" TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'plannedServiceCost') THEN
+        ALTER TABLE public.records ADD COLUMN "plannedServiceCost" TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'paymentDate') THEN
+        ALTER TABLE public.records ADD COLUMN "paymentDate" TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'totalPower') THEN
+        ALTER TABLE public.records ADD COLUMN "totalPower" TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'contractorAssignDate') THEN
+        ALTER TABLE public.records ADD COLUMN "contractorAssignDate" TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'workOrder') THEN
+        ALTER TABLE public.records ADD COLUMN "workOrder" TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'customerCpr') THEN
+        ALTER TABLE public.records ADD COLUMN "customerCpr" TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'jobType') THEN
+        ALTER TABLE public.records ADD COLUMN "jobType" TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'governorate') THEN
+        ALTER TABLE public.records ADD COLUMN "governorate" TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'nasCode') THEN
+        ALTER TABLE public.records ADD COLUMN "nasCode" TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'description') THEN
+        ALTER TABLE public.records ADD COLUMN "description" TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'mtcContractor') THEN
+        ALTER TABLE public.records ADD COLUMN "mtcContractor" TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'workflowEntryDate') THEN
+        ALTER TABLE public.records ADD COLUMN "workflowEntryDate" TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'contractorPaymentDate') THEN
+        ALTER TABLE public.records ADD COLUMN "contractorPaymentDate" TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'records' AND column_name = 'installationContractor') THEN
+        ALTER TABLE public.records ADD COLUMN "installationContractor" TEXT;
     END IF;
 END $$;
 
 -- 3. Create infra_references table for Infra Calculator
--- Re-creating this table with specific columns as requested
 DROP TABLE IF EXISTS public.infra_references;
 CREATE TABLE public.infra_references (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -176,12 +190,3 @@ CREATE POLICY "Allow full access to infra_references for public users" ON public
     FOR ALL
     USING (true)
     WITH CHECK (true);
-
--- =========================================================
--- REQUESTED SQL TO RESET RECORDS AND ADD PLOT NUMBER
--- Run the following commands in your SQL Editor to apply:
--- =========================================================
-
--- TRUNCATE TABLE public.records;
--- ALTER TABLE public.records ADD COLUMN IF NOT EXISTS "plotNumber" TEXT;
-

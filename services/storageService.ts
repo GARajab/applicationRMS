@@ -1,6 +1,12 @@
 import { supabase } from './supabaseClient';
 import { RecordItem, InfraReferenceItem } from '../types';
 
+// Helper to normalize plot numbers for consistent matching
+const normalizePlot = (p: string | number | null | undefined): string => {
+  if (!p) return '';
+  return String(p).trim();
+};
+
 export const getRecords = async (): Promise<RecordItem[]> => {
   const { data, error } = await supabase
     .from('records')
@@ -14,45 +20,57 @@ export const getRecords = async (): Promise<RecordItem[]> => {
   
   return (data || []).map((item: any) => ({
     ...item,
+    // Core fields
+    id: item.id,
+    label: item.label || 'Untitled',
+    status: item.status || 'Unknown',
+    block: item.block || '',
+    zone: item.zone || '',
     scheduleStartDate: item.scheduleStartDate || item.schedule_start_date || item.createdAt,
     wayleaveNumber: item.wayleaveNumber || item.wayleave_number || '',
     accountNumber: item.accountNumber || item.account_number || '',
     referenceNumber: item.referenceNumber || item.reference_number || '',
+    
+    // New Dashboard Fields
+    subtype: item.subtype,
+    type: item.type,
+    phase: item.phase,
+    scheduleEndDate: item.scheduleEndDate || item.schedule_end_date,
+    userConnected: item.userConnected || item.user_connected,
+    createdBy: item.createdBy || item.created_by,
+    capitalContribution: item.capitalContribution || item.capital_contribution,
+    nominatedContractor: item.nominatedContractor || item.nominated_contractor,
+    urgent: item.urgent,
+    lastShutdown: item.lastShutdown || item.last_shutdown,
+    planningEngineer: item.planningEngineer || item.planning_engineer,
+    constructionEngineer: item.constructionEngineer || item.construction_engineer,
+    supervisor: item.supervisor,
+    plannedTotalCost: item.plannedTotalCost || item.planned_total_cost,
+    plannedMaterialCost: item.plannedMaterialCost || item.planned_material_cost,
+    plannedServiceCost: item.plannedServiceCost || item.planned_service_cost,
+    paymentDate: item.paymentDate || item.payment_date,
+    totalPower: item.totalPower || item.total_power,
+    contractorAssignDate: item.contractorAssignDate || item.contractor_assign_date,
+    workOrder: item.workOrder || item.work_order,
+    plotNumber: normalizePlot(item.plotNumber || item.plot_number), // Normalize here
+    customerCpr: item.customerCpr || item.customer_cpr,
+    jobType: item.jobType || item.job_type,
+    governorate: item.governorate,
+    nasCode: item.nasCode || item.nas_code,
+    description: item.description,
+    mtcContractor: item.mtcContractor || item.mtc_contractor,
+    workflowEntryDate: item.workflowEntryDate || item.workflow_entry_date,
+    contractorPaymentDate: item.contractorPaymentDate || item.contractor_payment_date,
+    installationContractor: item.installationContractor || item.installation_contractor,
+
+    // Existing / internal
     requireUSP: item.requireUSP ?? item.require_usp ?? false,
     sentToUSPDate: item.sentToUSPDate || item.sent_to_usp_date,
     justification: item.justification || '',
-    status: item.status || 'Unknown',
-    label: item.label || 'Untitled',
-    block: item.block || '',
-    zone: item.zone || '',
     
+    // Extra fields
     applicationNumber: item.applicationNumber || item.application_number,
-    bpRequestNumber: item.bpRequestNumber || item.bp_request_number,
-    versionNumber: item.versionNumber || item.version_number,
-    constructionType: item.constructionType || item.construction_type,
-    ewaFeeStatus: item.ewaFeeStatus || item.ewa_fee_status,
-    applicationStatus: item.applicationStatus || item.application_status,
-    landOwnerId: item.landOwnerId || item.land_owner_id,
-    ownerNameEn: item.ownerNameEn || item.owner_name_en,
-    ownerNameAr: item.ownerNameAr || item.owner_name_ar,
-    numberOfAddresses: item.numberOfAddresses || item.number_of_addresses,
-    mouGatedCommunity: item.mouGatedCommunity || item.mou_gated_community,
-    buildingNumber: item.buildingNumber || item.building_number,
-    roadNumber: item.roadNumber || item.road_number,
-    plotNumber: item.plotNumber || item.plot_number,
-    titleDeed: item.titleDeed || item.title_deed,
-    buildableArea: item.buildableArea || item.buildable_area,
     momaaLoad: item.momaaLoad || item.momaa_load,
-    applicationDate: item.applicationDate || item.application_date,
-    nationality: item.nationality,
-    propertyCategory: item.propertyCategory || item.property_category,
-    usageNature: item.usageNature || item.usage_nature,
-    investmentZone: item.investmentZone || item.investment_zone,
-    initialPaymentDate: item.initialPaymentDate || item.initial_payment_date,
-    secondPayment: item.secondPayment || item.second_payment,
-    thirdPayment: item.thirdPayment || item.third_payment,
-    errorLog: item.errorLog || item.error_log,
-    partialExemption: item.partialExemption || item.partial_exemption
   }));
 };
 
@@ -61,6 +79,8 @@ export const addRecord = async (record: RecordItem): Promise<RecordItem | null> 
   if (!payload.id || payload.id === '') {
     delete payload.id;
   }
+  // Normalize plot on save
+  if (payload.plotNumber) payload.plotNumber = normalizePlot(payload.plotNumber);
 
   const { data, error } = await supabase
     .from('records')
@@ -76,9 +96,13 @@ export const addRecord = async (record: RecordItem): Promise<RecordItem | null> 
 };
 
 export const updateRecord = async (id: string, updates: Partial<RecordItem>): Promise<boolean> => {
+  const payload = { ...updates };
+  // Normalize plot on update
+  if (payload.plotNumber) payload.plotNumber = normalizePlot(payload.plotNumber);
+
   const { error } = await supabase
     .from('records')
-    .update(updates)
+    .update(payload)
     .eq('id', id);
 
   if (error) {
@@ -103,34 +127,39 @@ export const deleteRecord = async (id: string): Promise<boolean> => {
 
 // --- Infra References Methods ---
 
-// Batch check for payment status
+// RE-ENGINEERED: Checks for ACTUAL PAYMENT DATES in addition to plot existence
 export const getPaidPlotNumbers = async (plotNumbers: string[]): Promise<Set<string>> => {
-  // Filter out empty/null
-  const validPlots = [...new Set(plotNumbers.filter(p => p && p.trim() !== ''))];
+  // Normalize inputs
+  const validPlots = [...new Set(plotNumbers.map(p => normalizePlot(p)).filter(p => p !== ''))];
   if (validPlots.length === 0) return new Set();
 
   const paidPlots = new Set<string>();
-  const chunkSize = 200; // avoid URL too long errors
+  const chunkSize = 200;
 
   for (let i = 0; i < validPlots.length; i += chunkSize) {
     const chunk = validPlots.slice(i, i + chunkSize);
     
-    // We check if row exists with plotNumber match AND has at least one payment date field populated
+    // Select payment fields to check if they have values
     const { data, error } = await supabase
       .from('infra_references')
       .select('plotNumber, initialPaymentDate, secondPayment, thirdPayment')
       .in('plotNumber', chunk);
 
     if (error) {
-      console.error('Error checking paid plots:', error);
+      console.error('Error checking infra plots:', error);
       continue;
     }
 
     if (data) {
       data.forEach((row: any) => {
-        // Consider it paid if any payment date field is truthy
-        if (row.initialPaymentDate || row.secondPayment || row.thirdPayment) {
-          paidPlots.add(row.plotNumber);
+        // A plot is "YES" (Red) only if it has at least one payment date recorded
+        const hasPaymentData = 
+          (row.initialPaymentDate && String(row.initialPaymentDate).trim() !== '') || 
+          (row.secondPayment && String(row.secondPayment).trim() !== '') || 
+          (row.thirdPayment && String(row.thirdPayment).trim() !== '');
+
+        if (row.plotNumber && hasPaymentData) {
+          paidPlots.add(normalizePlot(row.plotNumber));
         }
       });
     }
@@ -139,16 +168,16 @@ export const getPaidPlotNumbers = async (plotNumbers: string[]): Promise<Set<str
   return paidPlots;
 };
 
-// Changed to search ONLY when requested to handle large datasets
 export const searchInfraReferences = async (plotNumber: string): Promise<InfraReferenceItem[]> => {
   if (!plotNumber) return [];
+  const term = normalizePlot(plotNumber);
 
-  // Search in database directly using ILIKE (case-insensitive)
+  // Search in database directly using ILIKE
   const { data, error } = await supabase
     .from('infra_references')
     .select('*')
-    .ilike('plotNumber', `%${plotNumber.trim()}%`)
-    .limit(20); // Limit results to prevent UI lag
+    .ilike('plotNumber', `%${term}%`)
+    .limit(20);
 
   if (error) {
     console.error('Error searching infra references:', error);
@@ -157,7 +186,6 @@ export const searchInfraReferences = async (plotNumber: string): Promise<InfraRe
   return data || [];
 };
 
-// Helper to check DB count
 export const getInfraStats = async (): Promise<{ count: number }> => {
   const { count, error } = await supabase
     .from('infra_references')
@@ -172,16 +200,16 @@ const CHUNK_SIZE = 1000;
 export const saveInfraReferences = async (items: Partial<InfraReferenceItem>[]): Promise<boolean> => {
   if (items.length === 0) return true;
 
-  // Process in chunks to handle 27k+ records
+  // Process in chunks
   let hasError = false;
   for (let i = 0; i < items.length; i += CHUNK_SIZE) {
     const chunk = items.slice(i, i + CHUNK_SIZE);
     
-    // Clean data before insert (ensure no undefined/null where text is expected if strict mode is on)
+    // Clean data before insert
     const cleanChunk = chunk.map(item => {
        const clean: any = { ...item };
-       // Ensure plotNumber is a string
-       if (clean.plotNumber) clean.plotNumber = String(clean.plotNumber);
+       // CRITICAL: Normalize plot number for consistent matching
+       if (clean.plotNumber) clean.plotNumber = normalizePlot(clean.plotNumber);
        return clean;
     });
 
@@ -192,8 +220,6 @@ export const saveInfraReferences = async (items: Partial<InfraReferenceItem>[]):
     if (error) {
       console.error(`Error saving chunk ${i} to ${i + CHUNK_SIZE}:`, error);
       hasError = true;
-      // Depending on requirement, we might want to continue or stop. 
-      // Stopping is safer to prevent partial data states that are hard to fix.
       break; 
     }
   }

@@ -1,11 +1,9 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Icons } from './components/Icons';
 import * as XLSX from 'xlsx';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend } from 'recharts';
-import { RecordItem, User, AuthState, Notification as AppNotification, NotificationType, SortConfig, InfraReferenceItem } from './types';
+import { RecordItem, InfraReferenceItem } from './types';
 import { getRecords, addRecord, deleteRecord, updateRecord, searchInfraReferences, saveInfraReferences, clearInfraReferences, getInfraStats, getPaidPlotNumbers } from './services/storageService';
 import { generateDataInsights, generateRecordReport } from './services/geminiService';
-import { supabase } from './services/supabaseClient';
 
 // --- Constants ---
 const STATUS_SEQUENCE = [
@@ -17,18 +15,14 @@ const STATUS_SEQUENCE = [
 
 // --- Helper Functions ---
 const parseDateSafe = (value: any): string => {
-  if (!value) return new Date().toISOString();
+  if (!value) return '';
   const d = new Date(value);
-  return isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
-};
-
-const parseExcelDate = (value: any): string | undefined => {
-  if (!value) return undefined;
-  const d = new Date(value);
-  return !isNaN(d.getTime()) ? d.toISOString() : undefined;
+  return isNaN(d.getTime()) ? '' : d.toISOString().split('T')[0]; // Return YYYY-MM-DD
 };
 
 const normalizeStatus = (s: string) => (s || '').trim().toLowerCase();
+
+const normalizePlot = (s: any) => String(s || '').trim();
 
 // Fuzzy matcher for Excel headers
 const getValueByFuzzyKey = (row: any, ...candidates: string[]): string => {
@@ -56,9 +50,6 @@ const getStatusColor = (status: string) => {
   if (s.includes('gis')) return 'bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20';
   if (s.includes('wayleave')) return 'bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/20';
   if (s === 'redesign') return 'bg-purple-50 text-purple-700 border border-purple-200 dark:bg-purple-500/10 dark:text-purple-400 dark:border-purple-500/20';
-  if (['assign planning', 'site visit'].includes(s)) return 'bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/20';
-  if (['design', 'attach utilities drawing'].includes(s)) return 'bg-cyan-50 text-cyan-700 border border-cyan-200 dark:bg-cyan-500/10 dark:text-cyan-400 dark:border-cyan-500/20';
-  if (s === 'cost estimation') return 'bg-orange-50 text-orange-700 border border-orange-200 dark:bg-orange-500/10 dark:text-orange-400 dark:border-orange-500/20';
   return 'bg-slate-100 text-slate-700 border border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700';
 };
 
@@ -72,258 +63,80 @@ const LoadingScreen: React.FC = () => (
         <Icons.Dashboard className="w-10 h-10 text-white animate-pulse" />
       </div>
     </div>
-    <h1 className="text-2xl font-bold text-slate-800 dark:text-white mb-2">Planning Dashboard</h1>
-    <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400">
+    <h1 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Planning Dashboard</h1>
+    <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
       <Icons.Spinner className="w-5 h-5 animate-spin text-emerald-500" />
       <span className="text-sm font-medium">Initializing system...</span>
     </div>
   </div>
 );
 
-// --- Task Manager Component ---
-interface Task {
-  id: number;
-  text: string;
-  completed: boolean;
-}
-
-const TaskManager: React.FC = () => {
-  const [tasks, setTasks] = useState<Task[]>([
-    { id: 1, text: 'Review new Excel uploads', completed: false },
-    { id: 2, text: 'Check suspended projects', completed: false }
-  ]);
-  const [newTask, setNewTask] = useState('');
-
-  const addTask = () => {
-    if (!newTask.trim()) return;
-    setTasks([...tasks, { id: Date.now(), text: newTask, completed: false }]);
-    setNewTask('');
-  };
-
-  const toggleTask = (id: number) => {
-    setTasks(tasks.map(t => t.id === id ? { ...t, completed: !t.completed } : t));
-  };
-
-  const deleteTask = (id: number) => {
-    setTasks(tasks.filter(t => t.id !== id));
-  };
-
-  return (
-    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm p-6 h-full flex flex-col">
-      <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
-        <Icons.Check className="w-5 h-5 text-emerald-500" /> Admin Tasks
-      </h3>
-      
-      <div className="flex gap-2 mb-4">
-        <input 
-          type="text" 
-          value={newTask} 
-          onChange={(e) => setNewTask(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && addTask()}
-          placeholder="Add new task..." 
-          className="flex-1 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm outline-none focus:border-emerald-500"
-        />
-        <button onClick={addTask} className="p-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors">
-          <Icons.Plus className="w-4 h-4" />
-        </button>
-      </div>
-
-      <div className="flex-1 overflow-y-auto custom-scrollbar space-y-2">
-        {tasks.length === 0 ? (
-          <p className="text-center text-xs text-slate-400 py-4">No pending tasks</p>
-        ) : (
-          tasks.map(task => (
-            <div key={task.id} className="flex items-center gap-3 p-2 hover:bg-slate-50 dark:hover:bg-slate-800/50 rounded-lg group transition-colors">
-              <button onClick={() => toggleTask(task.id)} className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${task.completed ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-300 dark:border-slate-600'}`}>
-                {task.completed && <Icons.Check className="w-3 h-3" />}
-              </button>
-              <span className={`flex-1 text-sm ${task.completed ? 'text-slate-400 line-through' : 'text-slate-700 dark:text-slate-200'}`}>{task.text}</span>
-              <button onClick={() => deleteTask(task.id)} className="text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
-                <Icons.Trash className="w-4 h-4" />
-              </button>
-            </div>
-          ))
-        )}
-      </div>
-    </div>
-  );
-};
-
 // --- Chat Page Component ---
-interface ChatMessage {
-  id: string;
-  role: 'user' | 'bot';
-  content: string;
-  timestamp: number;
-}
-
 const ChatPage: React.FC<{ records: RecordItem[] }> = ({ records }) => {
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: 'welcome',
-      role: 'bot',
-      content: 'Hello! I am your AI Project Assistant. I can access both your active records and the full infrastructure database. Please provide a **Project Number**, **Plot Number**, or **Reference**, and I will generate a full status report.',
-      timestamp: Date.now()
-    }
+  const [messages, setMessages] = useState<{id: string, role: 'user' | 'bot', content: string, timestamp: number}[]>([
+    { id: 'welcome', role: 'bot', content: 'Hello! I am your AI Project Assistant. I can access both your active records and the full infrastructure database. Please provide a **Project Number**, **Plot Number**, or **Reference**, and I will generate a full status report.', timestamp: Date.now() }
   ]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages, isTyping]);
+  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, isTyping]);
 
   const handleSend = async () => {
     if (!input.trim()) return;
-
-    const userMsg: ChatMessage = {
-      id: Date.now().toString(),
-      role: 'user',
-      content: input,
-      timestamp: Date.now()
-    };
-
+    const userMsg = { id: Date.now().toString(), role: 'user' as const, content: input, timestamp: Date.now() };
     setMessages(prev => [...prev, userMsg]);
     setInput('');
     setIsTyping(true);
 
-    const searchTerm = userMsg.content.toLowerCase().trim();
-
-    // 1. First, search in Active Records (Local state)
+    const searchTerm = normalizePlot(userMsg.content);
     let foundRecord: any = records.find(r => 
-      (r.referenceNumber || '').toLowerCase().includes(searchTerm) ||
-      (r.plotNumber || '').includes(searchTerm) ||
-      (r.applicationNumber || '').toLowerCase().includes(searchTerm) ||
-      (r.label || '').toLowerCase().includes(searchTerm) ||
-      (r.id || '').toLowerCase() === searchTerm
+      (r.referenceNumber || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      normalizePlot(r.plotNumber) === searchTerm ||
+      (r.label || '').toLowerCase().includes(searchTerm.toLowerCase())
     );
 
-    let source = 'Active Records';
-
-    // 2. If not found, search in Infra References (Database)
     if (!foundRecord) {
          try {
-             // We use the imported service to search the database
              const infraResults = await searchInfraReferences(searchTerm);
-             // Prefer exact match on plot if possible, else take first
              if (infraResults && infraResults.length > 0) {
-                 foundRecord = infraResults.find(r => r.plotNumber === searchTerm) || infraResults[0];
-                 source = 'Infrastructure Database (Excel)';
+                 foundRecord = infraResults.find(r => normalizePlot(r.plotNumber) === searchTerm) || infraResults[0];
              }
-         } catch (err) {
-             console.error("Chat search error:", err);
-         }
+         } catch (err) { console.error("Chat search error:", err); }
     }
 
-    let botResponseContent = '';
-
-    if (foundRecord) {
-      // Generate AI Report
-      botResponseContent = await generateRecordReport(foundRecord);
-    } else {
-      botResponseContent = `I searched both the active projects and the uploaded database but couldn't find a record matching "**${userMsg.content}**".\n\nPlease check the number and try again. Supported formats:\n- Plot Number (e.g. 12002678)\n- Application Number\n- Reference Number`;
-    }
-
-    const botMsg: ChatMessage = {
-      id: (Date.now() + 1).toString(),
-      role: 'bot',
-      content: botResponseContent,
-      timestamp: Date.now()
-    };
-
+    const botResponseContent = foundRecord ? await generateRecordReport(foundRecord) : `I searched both the active projects and the uploaded database but couldn't find a record matching "**${userMsg.content}**".`;
+    
     setIsTyping(false);
-    setMessages(prev => [...prev, botMsg]);
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
+    setMessages(prev => [...prev, { id: (Date.now() + 1).toString(), role: 'bot', content: botResponseContent, timestamp: Date.now() }]);
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-8rem)] bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden animate-fade-in">
-      {/* Header */}
-      <div className="p-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900 flex items-center gap-3">
-        <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-500 to-indigo-500 flex items-center justify-center shadow-lg">
-           <Icons.AI className="w-6 h-6 text-white" />
-        </div>
-        <div>
-           <h3 className="font-bold text-slate-800 dark:text-white">AI Project Assistant</h3>
-           <p className="text-xs text-slate-500 dark:text-slate-400">Powered by Gemini 3 • Connected to Full Database</p>
-        </div>
+    <div className="flex flex-col h-[calc(100vh-8rem)] bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden animate-scale-in">
+      <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 flex items-center gap-3">
+        <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-lg animate-bounce-subtle"><Icons.AI className="w-6 h-6 text-white" /></div>
+        <div><h3 className="font-bold text-slate-900 dark:text-white">AI Project Assistant</h3><p className="text-xs text-slate-600 dark:text-slate-400">Powered by Gemini 3</p></div>
       </div>
-
-      {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar bg-slate-50/30 dark:bg-black/20">
-        {messages.map((msg) => (
-          <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-[85%] md:max-w-[75%] rounded-2xl p-4 shadow-sm relative ${
-              msg.role === 'user' 
-                ? 'bg-blue-600 text-white rounded-tr-sm' 
-                : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-100 dark:border-slate-700 rounded-tl-sm'
-            }`}>
-              {msg.role === 'bot' && (
-                 <div className="absolute -top-3 -left-3 w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900/50 border-2 border-white dark:border-slate-900 flex items-center justify-center">
-                    <Icons.AI className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                 </div>
-              )}
-              <div className="whitespace-pre-wrap text-sm leading-relaxed">
-                {msg.content}
-              </div>
-              <div className={`text-[10px] mt-2 opacity-70 text-right ${msg.role === 'user' ? 'text-blue-100' : 'text-slate-400'}`}>
-                {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              </div>
+      <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar bg-slate-50/50 dark:bg-black/20">
+        {messages.map((msg, idx) => (
+          <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in-up`} style={{ animationDelay: `${idx * 0.05}s` }}>
+            <div className={`max-w-[85%] rounded-2xl p-4 shadow-sm ${msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-200 border border-slate-200 dark:border-slate-700'}`}>
+              <div className="whitespace-pre-wrap text-sm">{msg.content}</div>
             </div>
           </div>
         ))}
-        {isTyping && (
-          <div className="flex justify-start">
-             <div className="bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-2xl rounded-tl-sm p-4 shadow-sm flex items-center gap-2">
-                <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce"></span>
-                <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></span>
-                <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></span>
-             </div>
-          </div>
-        )}
+        {isTyping && <div className="flex justify-start animate-pulse"><div className="bg-white dark:bg-slate-800 p-4 rounded-2xl shadow-sm"><span className="text-slate-400 text-xs">AI thinking...</span></div></div>}
         <div ref={messagesEndRef} />
       </div>
-
-      {/* Input Area */}
-      <div className="p-4 bg-white dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800">
-         <div className="relative flex items-center gap-2">
-            <input 
-              type="text" 
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Enter Plot No, Project Ref, or App No..." 
-              className="flex-1 pl-4 pr-12 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
-            />
-            <button 
-              onClick={handleSend}
-              disabled={!input.trim() || isTyping}
-              className="absolute right-2 p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-               <Icons.Send className="w-4 h-4" />
-            </button>
-         </div>
-         <p className="text-[10px] text-center text-slate-400 mt-2">
-            AI can make mistakes. Please verify important project details.
-         </p>
+      <div className="p-4 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex gap-2">
+         <input type="text" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSend()} placeholder="Enter Plot No, Ref, or App No..." className="flex-1 pl-4 py-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 font-medium transition-all focus:scale-[1.01]" />
+         <button onClick={handleSend} disabled={!input.trim() || isTyping} className="p-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-transform active:scale-95"><Icons.Send className="w-5 h-5" /></button>
       </div>
     </div>
   );
 };
 
-
-// --- New Dedicated Calculator Page ---
+// --- Infra Calculator Page ---
 const InfraCalculatorPage: React.FC = () => {
   const [paymentType, setPaymentType] = useState<'10' | '12' | '6.5'>('10');
   const [fees, setFees] = useState('');
@@ -332,428 +145,150 @@ const InfraCalculatorPage: React.FC = () => {
   const [plotSearch, setPlotSearch] = useState('');
   const [dbCount, setDbCount] = useState<number>(0);
   const [isLoadingReferences, setIsLoadingReferences] = useState(false);
-  const [isSearching, setIsSearching] = useState(false);
   const [uploadStatus, setUploadStatus] = useState('');
 
-  useEffect(() => {
-    checkDbStatus();
-  }, []);
+  useEffect(() => { getInfraStats().then(s => setDbCount(s.count)); }, []);
 
-  const checkDbStatus = async () => {
-    const stats = await getInfraStats();
-    setDbCount(stats.count);
-  };
-
-  const eddShare = useMemo(() => {
-    const val = parseFloat(fees);
-    if (isNaN(val)) return 0;
-    const rates = { '10': 0.4, '12': 0.375, '6.5': 0.6923076923076923 };
-    return val * rates[paymentType];
-  }, [fees, paymentType]);
-
-  const finalCC = useMemo(() => {
-    const val = parseFloat(ccRef);
-    if (isNaN(val)) return 0;
-    return Math.max(0, val - eddShare);
-  }, [ccRef, eddShare]);
-
-  const paymentAlerts = useMemo(() => {
-      if (!searchResult) return [];
-      const alerts = [];
-      if (searchResult.initialPaymentDate) alerts.push({ label: 'Initial Payment', value: searchResult.initialPaymentDate });
-      if (searchResult.secondPayment) alerts.push({ label: 'Second Payment', value: searchResult.secondPayment });
-      if (searchResult.thirdPayment) alerts.push({ label: 'Third Payment', value: searchResult.thirdPayment });
-      return alerts;
-  }, [searchResult]);
+  const eddShare = parseFloat(fees) * ({'10':0.4, '12':0.375, '6.5':0.6923}[paymentType] || 0) || 0;
+  const finalCC = Math.max(0, (parseFloat(ccRef) || 0) - eddShare);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setIsLoadingReferences(true);
-    setUploadStatus('Reading file...');
-    
+    setUploadStatus('Reading...');
     const reader = new FileReader();
     reader.onload = async (evt) => {
-        const bstr = evt.target?.result;
-        setUploadStatus('Parsing Excel...');
-        const wb = XLSX.read(bstr, { type: 'binary' });
-        const wsname = wb.SheetNames[0];
-        const ws = wb.Sheets[wsname];
-        const jsonData = XLSX.utils.sheet_to_json(ws);
+        const wb = XLSX.read(evt.target?.result, { type: 'binary' });
+        const jsonData = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+        setUploadStatus(`Uploading ${jsonData.length}...`);
         
-        setUploadStatus(`Uploading ${jsonData.length} records...`);
-
-        // Use fuzzy matching for robustness
-        const dbItems: Partial<InfraReferenceItem>[] = jsonData.map((row: any) => ({
-            applicationNumber: getValueByFuzzyKey(row, "Application number", "App No"),
-            bpRequestNumber: getValueByFuzzyKey(row, "BP request number", "BP No"),
-            versionNumber: getValueByFuzzyKey(row, "Version Number", "Version"),
-            constructionType: getValueByFuzzyKey(row, "Construction Type"),
-            ewaFeeStatus: getValueByFuzzyKey(row, "EWA Fee Status (Y or N)", "Fee Status"),
-            applicationStatus: getValueByFuzzyKey(row, "Application status", "Status"),
-            accountNumber: getValueByFuzzyKey(row, "Account Number", "Account"),
-            landOwnerId: getValueByFuzzyKey(row, "Land Owner ID", "Owner ID"),
-            ownerNameEn: getValueByFuzzyKey(row, "Owner English Name", "Owner Name En"),
-            ownerNameAr: getValueByFuzzyKey(row, "Owner Arabic Name", "Owner Name Ar"),
-            numberOfAddresses: getValueByFuzzyKey(row, "No of address required for this project", "Addresses"),
-            mouGatedCommunity: getValueByFuzzyKey(row, "MOU B/W EWA & gated community", "MOU"),
-            buildingNumber: getValueByFuzzyKey(row, "Building number", "Building"),
-            blockNumber: getValueByFuzzyKey(row, "Block number", "Block"),
-            roadNumber: getValueByFuzzyKey(row, "Road Number", "Road"),
-            // Specific attention to plot number - Ensure it's treated as string
-            plotNumber: getValueByFuzzyKey(row, "Parcel / Plot number", "Plot number", "Parcel Number", "Plot"),
-            titleDeed: getValueByFuzzyKey(row, "Title Deed", "Deed"),
-            buildableArea: getValueByFuzzyKey(row, "Buildable Area", "Area"),
-            momaaLoad: getValueByFuzzyKey(row, "Momaa Electricity Load", "Load"),
-            date: getValueByFuzzyKey(row, "Date"),
-            nationality: getValueByFuzzyKey(row, "Nationality"),
-            propCategory: getValueByFuzzyKey(row, "Prop Category", "Category"),
-            usageNature: getValueByFuzzyKey(row, "Usage Nature", "Usage"),
-            investmentZone: getValueByFuzzyKey(row, "Investment Zone", "Zone"),
-            initialPaymentDate: getValueByFuzzyKey(row, "Initial Payment Date"),
-            secondPayment: getValueByFuzzyKey(row, "Second Payment"),
-            thirdPayment: getValueByFuzzyKey(row, "Third payment"),
-            errorLog: getValueByFuzzyKey(row, "Error log"),
-            partialExemption: getValueByFuzzyKey(row, "Partial Exemption")
+        const dbItems = jsonData.map((row: any) => ({
+            plotNumber: getValueByFuzzyKey(row, "Parcel / Plot number", "Plot number", "Plot", "Parcel Number"),
+            // More robust fuzzy keys for payments
+            initialPaymentDate: getValueByFuzzyKey(row, "Initial Payment Date", "1st Payment", "Initial Pmt", "First Payment"),
+            secondPayment: getValueByFuzzyKey(row, "Second Payment", "2nd Payment"),
+            thirdPayment: getValueByFuzzyKey(row, "Third payment", "3rd Payment"),
+            ownerNameEn: getValueByFuzzyKey(row, "Owner English Name", "Owner Name", "Owner"),
+            ewaFeeStatus: getValueByFuzzyKey(row, "EWA Fee Status", "Fee Status")
         }));
 
         await saveInfraReferences(dbItems);
-        await checkDbStatus();
+        const s = await getInfraStats();
+        setDbCount(s.count);
         setIsLoadingReferences(false);
         setUploadStatus('');
-        alert("Database upload complete.");
+        alert("Upload complete.");
     };
     reader.readAsBinaryString(file);
   };
 
-  const handleClearDatabase = async () => {
-      if (confirm("Delete all saved infra reference data? This cannot be undone.")) {
-          setIsLoadingReferences(true);
-          await clearInfraReferences();
-          setDbCount(0);
-          setSearchResult(null);
-          setIsLoadingReferences(false);
-      }
-  };
-
   const handleSearch = async () => {
-      if (!plotSearch.trim()) return;
-      setIsSearching(true);
+      const term = normalizePlot(plotSearch);
+      if (!term) return;
       setSearchResult(null);
-      const results = await searchInfraReferences(plotSearch.trim());
-      // Prefer exact match if multiple, otherwise first
-      const exact = results.find(r => r.plotNumber === plotSearch.trim());
-      setSearchResult(exact || results[0] || null);
-      setIsSearching(false);
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-      if (e.key === 'Enter') handleSearch();
+      
+      const results = await searchInfraReferences(term);
+      // Prioritize exact match
+      const exactMatch = results.find(r => normalizePlot(r.plotNumber) === term);
+      setSearchResult(exactMatch || results[0] || null);
   };
 
   return (
-    <div className="w-full h-full p-0 flex flex-col md:flex-row gap-8 animate-fade-in">
-      {/* Left Column: Calculator */}
+    <div className="w-full h-full flex flex-col md:flex-row gap-8 animate-fade-in-up">
       <div className="md:w-1/2 flex flex-col gap-6">
-        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm p-6">
-          <h2 className="text-xl font-bold text-slate-800 dark:text-white mb-6 flex items-center gap-2">
-            <Icons.Calculator className="w-6 h-6 text-emerald-500" />
-            Fee Calculator
-          </h2>
-
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-6 hover:shadow-md transition-shadow">
+          <h2 className="text-xl font-bold mb-6 flex items-center gap-2 text-slate-900 dark:text-white"><Icons.Calculator className="text-emerald-500" /> Fee Calculator</h2>
           <div className="space-y-6">
-            <div>
-              <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Payment Type</label>
-              <div className="grid grid-cols-3 gap-3">
-                {['10', '12', '6.5'].map((type) => (
-                  <button
-                    key={type}
-                    onClick={() => setPaymentType(type as any)}
-                    className={`py-3 px-4 rounded-xl font-bold text-sm transition-all border ${
-                      paymentType === type
-                      ? 'bg-emerald-500 text-white border-emerald-500 shadow-lg shadow-emerald-500/20 transform scale-[1.02]'
-                      : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-emerald-500/50 hover:bg-slate-50 dark:hover:bg-slate-700'
-                    }`}
-                  >
-                    {type}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Fees Amount (BD)</label>
-              <div className="relative">
-                <input
-                  type="number"
-                  value={fees}
-                  onChange={(e) => setFees(e.target.value)}
-                  placeholder="Enter fees..."
-                  className="w-full pl-4 pr-12 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-slate-900 dark:text-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 outline-none transition-all font-medium text-lg"
-                />
-                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">BD</span>
-              </div>
-            </div>
-
-            <div className="bg-slate-50 dark:bg-slate-800/50 p-5 rounded-2xl border border-slate-100 dark:border-slate-700/50">
-                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">EDD Share (Calculated)</label>
-                <div className="text-2xl font-mono font-bold text-slate-800 dark:text-slate-200">
-                {eddShare.toLocaleString('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} <span className="text-sm text-slate-500">BD</span>
-                </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">13/2006 CC Amount (BD)</label>
-              <div className="relative">
-                <input
-                  type="number"
-                  value={ccRef}
-                  onChange={(e) => setCcRef(e.target.value)}
-                  placeholder="Enter 13/2006 CC..."
-                  className="w-full pl-4 pr-12 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-slate-900 dark:text-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 outline-none transition-all font-medium text-lg"
-                />
-                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">BD</span>
-              </div>
-            </div>
-
-            <div className={`p-5 rounded-2xl border transition-all duration-300 ${finalCC > 0 ? 'bg-emerald-50/80 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-900/50' : 'bg-slate-100/50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700/50'}`}>
-                <label className="block text-xs font-bold uppercase tracking-wider mb-1 flex items-center gap-2 text-slate-600 dark:text-slate-300">
-                <Icons.Check className={`w-4 h-4 ${finalCC > 0 ? 'text-emerald-500' : 'text-slate-400'}`} /> Final Cost Recovery (CC)
-                </label>
-                <div className={`text-4xl font-bold font-mono tracking-tight mt-1 ${finalCC > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400'}`}>
-                {finalCC.toLocaleString('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} <span className="text-lg opacity-60">BD</span>
-                </div>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 font-medium">
-                {ccRef && parseFloat(ccRef) <= eddShare ? 'Result: Zero (13/2006 CC ≤ EDD Share)' : 'Result: 13/2006 CC - EDD Share'}
-                </p>
+            <div className="grid grid-cols-3 gap-3">{['10', '12', '6.5'].map(t => <button key={t} onClick={() => setPaymentType(t as any)} className={`py-3 rounded-xl font-bold border transition-all active:scale-95 ${paymentType === t ? 'bg-emerald-600 text-white border-emerald-600 shadow-lg' : 'bg-slate-50 border-slate-300 text-slate-700 hover:bg-slate-100'}`}>{t}</button>)}</div>
+            <input type="number" value={fees} onChange={(e) => setFees(e.target.value)} placeholder="Enter fees (BD)..." className="w-full p-4 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 outline-none font-medium transition-shadow focus:shadow-md" />
+            <input type="number" value={ccRef} onChange={(e) => setCcRef(e.target.value)} placeholder="Enter 13/2006 CC (BD)..." className="w-full p-4 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 outline-none font-medium transition-shadow focus:shadow-md" />
+            <div className={`p-5 rounded-2xl border transition-all duration-300 transform ${finalCC > 0 ? 'bg-emerald-50 border-emerald-200 text-emerald-900 scale-105' : 'bg-slate-100 border-slate-200 text-slate-800'}`}>
+                <div className="text-2xl font-bold">{finalCC.toLocaleString()} BD</div>
+                <div className="text-xs text-slate-500 uppercase font-semibold mt-1">Final Cost Recovery</div>
             </div>
           </div>
         </div>
       </div>
-
-      {/* Right Column: Database Lookup */}
       <div className="md:w-1/2 flex flex-col gap-6">
-        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm p-6 flex-1 flex flex-col">
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
-              <Icons.Search className="w-6 h-6 text-blue-500" />
-              Plot Lookup
-            </h2>
-            {dbCount > 0 && (
-                <button 
-                    onClick={handleClearDatabase}
-                    className="text-xs text-rose-500 hover:text-rose-700 font-bold flex items-center gap-1 bg-rose-50 dark:bg-rose-900/10 px-2 py-1 rounded"
-                >
-                    <Icons.Trash className="w-3 h-3" /> Clear DB
-                </button>
-            )}
-          </div>
-
-          <div className="mb-6 space-y-4">
-            {dbCount === 0 && !isLoadingReferences ? (
-                <div className="border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl p-8 flex flex-col items-center justify-center text-center hover:border-emerald-500 dark:hover:border-emerald-500 transition-colors bg-slate-50 dark:bg-slate-900/50">
-                    <Icons.Upload className="w-10 h-10 text-slate-400 mb-3" />
-                    <p className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">No Data Available</p>
-                    <p className="text-xs text-slate-400 mb-4">Upload an Excel sheet to search plot numbers</p>
-                    <input type="file" accept=".xlsx, .xls" id="page-ref-upload" className="hidden" onChange={handleFileUpload} />
-                    <label htmlFor="page-ref-upload" className="px-5 py-2.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-lg text-xs font-bold cursor-pointer hover:opacity-90 transition-opacity">
-                        Upload Sheet
-                    </label>
-                </div>
-            ) : (
-                <>
-                  <div className="flex items-center justify-between bg-emerald-50 dark:bg-emerald-900/20 px-4 py-3 rounded-xl border border-emerald-100 dark:border-emerald-900/30">
-                      <span className="text-sm font-bold text-emerald-700 dark:text-emerald-400 flex items-center gap-2">
-                          {isLoadingReferences ? <Icons.Spinner className="w-4 h-4 animate-spin" /> : <Icons.Excel className="w-4 h-4" />}
-                          {isLoadingReferences ? uploadStatus || "Syncing..." : `Database Ready (${dbCount.toLocaleString()} Records)`}
-                      </span>
-                  </div>
-                  <div className="relative">
-                      <Icons.Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
-                      <input 
-                          type="text" 
-                          placeholder="Enter Plot Number (e.g. 12002678)..." 
-                          value={plotSearch}
-                          onChange={(e) => setPlotSearch(e.target.value)}
-                          onKeyDown={handleKeyDown}
-                          className="w-full pl-12 pr-16 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none font-medium text-lg shadow-sm"
-                      />
-                      <button 
-                         onClick={handleSearch}
-                         className="absolute right-2 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 transition-colors"
-                      >
-                         Search
-                      </button>
-                  </div>
-                </>
-            )}
-          </div>
-
-          <div className="flex-1 bg-slate-50/50 dark:bg-slate-900/50 rounded-xl border border-slate-200 dark:border-slate-800 p-4 overflow-y-auto custom-scrollbar min-h-[300px]">
-            {isSearching ? (
-                 <div className="h-full flex flex-col items-center justify-center text-slate-400 text-center opacity-70">
-                    <Icons.Spinner className="w-8 h-8 mb-4 text-blue-500 animate-spin" />
-                    <p className="font-bold text-sm">Searching Database...</p>
-                 </div>
-            ) : searchResult ? (
-                <div className="space-y-4 animate-fade-in-up">
-                    {paymentAlerts.length > 0 ? (
-                        <div className="mb-4 p-4 rounded-xl bg-gradient-to-r from-amber-100 to-orange-100 dark:from-amber-900/40 dark:to-orange-900/40 border border-amber-200 dark:border-amber-700/50 shadow-lg animate-pulse">
-                            <div className="flex items-center gap-3">
-                                <div className="p-2 bg-amber-500 text-white rounded-lg animate-bounce shadow-md">
-                                    <Icons.CreditCard className="w-5 h-5" />
-                                </div>
-                                <div>
-                                    <h4 className="font-bold text-amber-900 dark:text-amber-100 text-sm uppercase tracking-wider">Payment History Detected</h4>
-                                    <div className="flex flex-wrap gap-2 mt-1">
-                                        {paymentAlerts.map((p, idx) => (
-                                            <span key={idx} className="inline-flex items-center gap-1 px-2 py-0.5 bg-white/50 dark:bg-black/20 rounded text-xs font-semibold text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-800">
-                                                {p.label}: {String(p.value)}
-                                            </span>
-                                        ))}
-                                    </div>
-                                </div>
-                            </div>
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-6 flex flex-col hover:shadow-md transition-shadow">
+            <div className="flex justify-between mb-6"><h2 className="text-xl font-bold text-slate-900 dark:text-white">Plot Lookup</h2><span className="text-xs bg-emerald-100 text-emerald-800 px-2 py-1 rounded font-bold">{dbCount} Records</span></div>
+            {dbCount === 0 && !isLoadingReferences && <div className="text-center p-8 border-2 border-dashed border-slate-300 rounded-xl hover:border-emerald-500 transition-colors cursor-pointer group"><input type="file" id="calc-upload" className="hidden" onChange={handleFileUpload} /><label htmlFor="calc-upload" className="px-4 py-2 bg-slate-900 text-white rounded-lg cursor-pointer hover:bg-slate-800 font-bold text-sm transition-colors group-hover:scale-105 inline-block">Upload Database</label></div>}
+            <div className="relative mb-4"><input type="text" placeholder="Search Plot..." value={plotSearch} onChange={e => setPlotSearch(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSearch()} className="w-full p-3 pl-10 border border-slate-300 rounded-xl bg-white text-slate-900 focus:ring-1 focus:ring-blue-500 outline-none font-bold transition-shadow focus:shadow-md" /><Icons.Search className="absolute left-3 top-3 text-slate-400" /><button onClick={handleSearch} className="absolute right-2 top-2 bg-blue-600 text-white px-3 py-1 rounded text-sm font-bold hover:bg-blue-700 transition-colors">Search</button></div>
+            
+            <div className="flex-1 bg-slate-50 rounded-xl border border-slate-200 p-4 min-h-[300px]">
+            {searchResult ? (
+                <div className="space-y-3 animate-fade-in-up">
+                    <div className="flex justify-between items-center border-b border-slate-200 pb-2">
+                         <span className="text-xs font-bold text-slate-500 uppercase">Plot Number</span>
+                         <span className="text-lg font-bold text-slate-900">{searchResult.plotNumber}</span>
+                    </div>
+                    {searchResult.ownerNameEn && (
+                        <div className="flex justify-between items-center border-b border-slate-200 pb-2">
+                             <span className="text-xs font-bold text-slate-500 uppercase">Owner</span>
+                             <span className="text-sm font-medium text-slate-800">{searchResult.ownerNameEn}</span>
                         </div>
-                    ) : (
-                         <div className="mb-4 p-4 rounded-xl bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border border-blue-200 dark:border-blue-800 shadow-lg animate-slide-in-right">
-                            <div className="flex items-center gap-3">
-                                <div className="p-2 bg-blue-500 text-white rounded-lg shadow-md">
-                                    <Icons.Alert className="w-5 h-5" />
-                                </div>
-                                <div>
-                                    <h4 className="font-bold text-blue-900 dark:text-blue-100 text-sm uppercase tracking-wider">No Payment History</h4>
-                                    <p className="text-xs text-blue-700 dark:text-blue-300 mt-1 font-medium">
-                                        No prior payments recorded for this plot.
-                                    </p>
-                                </div>
-                            </div>
+                    )}
+                     {searchResult.ewaFeeStatus && (
+                        <div className="flex justify-between items-center border-b border-slate-200 pb-2">
+                             <span className="text-xs font-bold text-slate-500 uppercase">Fee Status</span>
+                             <span className="text-sm font-medium text-slate-800">{searchResult.ewaFeeStatus}</span>
                         </div>
                     )}
                     
-                    <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-3">
-                        <span className="text-xs font-bold uppercase text-slate-500 dark:text-slate-400 tracking-wider">Result Found</span>
-                        <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-900/30 px-2 py-0.5 rounded">Match Found</span>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {Object.entries(searchResult).map(([key, value]) => {
-                            if (key.startsWith('_') || key === 'id' || key === 'createdAt') return null;
-                            const label = key.replace(/([A-Z])/g, ' $1').trim();
-                            return (
-                                <div key={key} className="flex flex-col bg-white dark:bg-slate-900 p-3 rounded-lg border border-slate-100 dark:border-slate-800 shadow-sm">
-                                    <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider mb-1">{label}</span>
-                                    <span className="text-sm font-semibold text-slate-800 dark:text-slate-200 break-words">{String(value || '-')}</span>
-                                </div>
-                            );
-                        })}
+                    <div className="grid grid-cols-1 gap-2 mt-4">
+                        {[
+                            { label: 'Initial Payment', val: searchResult.initialPaymentDate },
+                            { label: 'Second Payment', val: searchResult.secondPayment },
+                            { label: 'Third Payment', val: searchResult.thirdPayment },
+                        ].map((item, i) => (
+                            <div key={item.label} className="p-3 bg-white border border-slate-200 rounded-lg animate-slide-in-right" style={{ animationDelay: `${i * 100}ms`, animationFillMode: 'both' }}>
+                                <span className="block text-xs font-bold text-slate-500 uppercase mb-1">{item.label}</span>
+                                <span className={`block font-bold ${item.val && item.val.trim() ? 'text-emerald-600' : 'text-slate-400 italic'}`}>
+                                    {item.val && item.val.trim() ? item.val : 'Not Recorded'}
+                                </span>
+                            </div>
+                        ))}
                     </div>
                 </div>
             ) : (
-                <div className="h-full flex flex-col items-center justify-center text-slate-400 text-center opacity-70">
-                    <Icons.Search className="w-12 h-12 mb-4 text-slate-300 dark:text-slate-700" />
-                    <p className="font-bold text-lg mb-1">Waiting for Input</p>
-                    <p className="text-sm max-w-xs">Enter a plot number and press Enter to search the {dbCount > 0 ? 'server database' : 'system'}.</p>
+                <div className="h-full flex items-center justify-center text-slate-400 text-sm italic animate-pulse">
+                    {plotSearch && !searchResult ? 'No record found.' : 'Enter plot number to search.'}
                 </div>
             )}
-          </div>
+            </div>
         </div>
       </div>
     </div>
   );
 };
 
-// ... Existing EditRecordModal and ExcelUploader components ...
-// (Keeping EditRecordModal and ExcelUploader as they were, but ensuring App uses the new page structure)
-
-const EditRecordModal: React.FC<{ 
-  isOpen: boolean; 
-  record: RecordItem | null; 
-  onClose: () => void; 
-  onSave: (id: string, updates: Partial<RecordItem>) => Promise<void> 
-}> = ({ isOpen, record, onClose, onSave }) => {
-  const [formData, setFormData] = useState<RecordItem>({
-    id: '', label: '', status: '', block: '', zone: '', scheduleStartDate: '', wayleaveNumber: '', accountNumber: '', referenceNumber: '', requireUSP: false, sentToUSPDate: '', justification: '', createdAt: '', initialPaymentDate: '', secondPayment: '', thirdPayment: ''
-  });
-  const [isSaving, setIsSaving] = useState(false);
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    if (record) {
-      setFormData({ 
-        ...record,
-        sentToUSPDate: record.sentToUSPDate ? new Date(record.sentToUSPDate).toISOString().split('T')[0] : '',
-        scheduleStartDate: record.scheduleStartDate ? new Date(record.scheduleStartDate).toISOString().split('T')[0] : '',
-        initialPaymentDate: record.initialPaymentDate ? new Date(record.initialPaymentDate).toISOString().split('T')[0] : '',
-        justification: record.justification || ''
-      });
-      setError('');
-    }
-  }, [record]);
-
-  const handleSave = async () => {
-    if (!record) return;
-    if (formData.status === 'Suspended by EDD' && !formData.justification?.trim()) {
-      setError(`Justification is required when status is "${formData.status}".`);
-      return;
-    }
-    setIsSaving(true);
-    await onSave(record.id, {
-      ...formData,
-      sentToUSPDate: formData.sentToUSPDate ? new Date(formData.sentToUSPDate).toISOString() : undefined,
-      scheduleStartDate: formData.scheduleStartDate ? new Date(formData.scheduleStartDate).toISOString() : new Date().toISOString(),
-      initialPaymentDate: formData.initialPaymentDate ? new Date(formData.initialPaymentDate).toISOString() : undefined
-    });
-    setIsSaving(false);
-    onClose();
-  };
-
-  const handleChange = (key: keyof RecordItem, value: any) => setFormData(prev => ({ ...prev, [key]: value }));
+const EditRecordModal: React.FC<{ isOpen: boolean; record: RecordItem | null; onClose: () => void; onSave: (id: string, updates: Partial<RecordItem>) => Promise<void> }> = ({ isOpen, record, onClose, onSave }) => {
+  const [formData, setFormData] = useState<Partial<RecordItem>>({});
+  useEffect(() => { if (record) setFormData(record); }, [record]);
 
   if (!isOpen || !record) return null;
-
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
-      <div className="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col animate-scale-in border border-slate-200 dark:border-slate-800 max-h-[90vh]">
-        <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-900">
-          <div><h2 className="text-xl font-bold text-slate-800 dark:text-white">Edit Record</h2></div>
-          <button onClick={onClose}><Icons.Close className="w-6 h-6 text-slate-400" /></button>
+    <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4 animate-fade-in">
+      <div className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-2xl p-6 shadow-xl max-h-[90vh] overflow-y-auto border border-slate-200 animate-scale-in">
+        <h2 className="text-xl font-bold mb-4 text-slate-900 dark:text-white">Edit Record</h2>
+        <div className="space-y-4">
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-slate-600">Label</label>
+              <input type="text" value={formData.label || ''} onChange={e => setFormData({...formData, label: e.target.value})} className="w-full p-3 border border-slate-300 rounded-lg bg-white text-slate-900 font-medium focus:ring-2 focus:ring-blue-500 outline-none transition-shadow" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-slate-600">Status</label>
+              <input type="text" value={formData.status || ''} onChange={e => setFormData({...formData, status: e.target.value})} className="w-full p-3 border border-slate-300 rounded-lg bg-white text-slate-900 font-medium focus:ring-2 focus:ring-blue-500 outline-none transition-shadow" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-slate-600">Plot Number</label>
+              <input type="text" value={formData.plotNumber || ''} onChange={e => setFormData({...formData, plotNumber: e.target.value})} className="w-full p-3 border border-slate-300 rounded-lg bg-white text-slate-900 font-medium focus:ring-2 focus:ring-blue-500 outline-none transition-shadow" />
+            </div>
         </div>
-        <div className="p-8 overflow-y-auto custom-scrollbar flex-1">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="md:col-span-2">
-              <label className="block text-xs font-bold text-slate-500 mb-2">Project Label</label>
-              <input type="text" value={formData.label} onChange={(e) => handleChange('label', e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 dark:text-white outline-none" />
-            </div>
-            {/* ... keeping simplified inputs for brevity in this response, logic remains same ... */}
-            <div>
-                <label className="block text-xs font-bold text-slate-500 mb-2">Reference</label>
-                <input type="text" value={formData.referenceNumber} onChange={(e) => handleChange('referenceNumber', e.target.value)} className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 dark:text-white outline-none" />
-            </div>
-            <div>
-                <label className="block text-xs font-bold text-slate-500 mb-2">Account</label>
-                <input type="text" value={formData.accountNumber} onChange={(e) => handleChange('accountNumber', e.target.value)} className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 dark:text-white outline-none" />
-            </div>
-            <div className="md:col-span-2 pt-4 border-t border-slate-100 dark:border-slate-700">
-               <label className="block text-xs font-bold text-slate-500 mb-2">Status</label>
-               <select value={formData.status} onChange={(e) => handleChange('status', e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 dark:text-white outline-none font-bold">
-                {STATUS_SEQUENCE.map(s => <option key={s} value={s}>{s}</option>)}
-                {!STATUS_SEQUENCE.includes(formData.status) && formData.status && <option value={formData.status}>{formData.status}</option>}
-              </select>
-            </div>
-            {formData.status === 'Suspended by EDD' && (
-              <div className="md:col-span-2 p-4 bg-red-50 dark:bg-red-900/10 rounded-xl border border-red-100 dark:border-red-900/50">
-                <label className="block text-xs font-bold text-red-600 mb-2">Justification</label>
-                <textarea value={formData.justification} onChange={(e) => handleChange('justification', e.target.value)} className="w-full p-3 rounded-lg border border-red-200 dark:border-red-900/50 bg-white dark:bg-slate-900 dark:text-white" />
-              </div>
-            )}
-             {error && <div className="md:col-span-2 text-red-600 text-sm font-bold bg-red-50 p-3 rounded-lg">{error}</div>}
-          </div>
-        </div>
-        <div className="p-6 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-3">
-          <button onClick={onClose} className="px-6 py-3 text-slate-600 dark:text-slate-300 font-bold hover:bg-slate-100 rounded-xl">Discard</button>
-          <button onClick={handleSave} disabled={isSaving} className="px-8 py-3 bg-slate-900 dark:bg-emerald-600 text-white font-bold rounded-xl flex items-center gap-2">
-            {isSaving ? <Icons.Spinner className="animate-spin" /> : <Icons.Save />} Save
-          </button>
+        <div className="flex justify-end gap-2 mt-6">
+            <button onClick={onClose} className="px-4 py-2 rounded-lg hover:bg-slate-100 text-slate-700 font-bold text-sm border border-transparent transition-colors">Cancel</button>
+            <button onClick={() => { onSave(record.id, formData); onClose(); }} className="px-6 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800 font-bold text-sm shadow-md hover:shadow-lg transition-all active:scale-95">Save</button>
         </div>
       </div>
     </div>
@@ -766,53 +301,65 @@ const ExcelUploader: React.FC<{ onUpload: (data: any[]) => void }> = ({ onUpload
     setIsProcessing(true);
     const reader = new FileReader();
     reader.onload = (e) => {
-      setTimeout(() => {
-        const wb = XLSX.read(e.target?.result, { type: 'binary' });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const jsonData = XLSX.utils.sheet_to_json(ws);
-        const mapped = jsonData.map((row: any, i) => {
-           let rawStatus = getValueByFuzzyKey(row, "Status", "Application status");
-           const canonicalStatus = STATUS_SEQUENCE.find(s => s.toLowerCase() === rawStatus.toLowerCase());
-           if (!canonicalStatus) return null;
-
-           return {
+      const wb = XLSX.read(e.target?.result, { type: 'binary' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const jsonData = XLSX.utils.sheet_to_json(ws);
+      const mapped = jsonData.map((row: any, i) => ({
              id: '',
              label: getValueByFuzzyKey(row, "Label", "Title") || `Imported ${i + 1}`,
-             status: canonicalStatus,
-             block: getValueByFuzzyKey(row, "Block", "Block number") || 'N/A',
-             zone: getValueByFuzzyKey(row, "Zone") || 'N/A',
-             scheduleStartDate: parseDateSafe(getValueByFuzzyKey(row, "Schedule start date", "Start Date", "Date")),
-             wayleaveNumber: getValueByFuzzyKey(row, "Wayleave number", "Wayleave"),
-             accountNumber: getValueByFuzzyKey(row, "Account Number", "Account"),
-             referenceNumber: getValueByFuzzyKey(row, "Reference Number", "Reference") || `REF-${Date.now()}-${i}`,
-             requireUSP: String(getValueByFuzzyKey(row, "Require USP", "require_usp")).toLowerCase() === 'yes',
-             createdAt: new Date().toISOString(),
-             // New Fields Mapping using fuzzy keys
-             plotNumber: getValueByFuzzyKey(row, "Parcel / Plot number", "Plot number", "Parcel Number", "Plot"),
-             applicationNumber: getValueByFuzzyKey(row, "Application number"),
-             ownerNameEn: getValueByFuzzyKey(row, "Owner English Name"),
-             ownerNameAr: getValueByFuzzyKey(row, "Owner Arabic Name"),
-             // ... Add other fields as needed using fuzzy key helper ... 
-             initialPaymentDate: parseExcelDate(getValueByFuzzyKey(row, "Initial Payment Date")),
-             secondPayment: getValueByFuzzyKey(row, "Second Payment"),
-             thirdPayment: getValueByFuzzyKey(row, "Third payment"),
-           } as RecordItem;
-        }).filter((item): item is RecordItem => item !== null);
-        onUpload(mapped);
-        setIsProcessing(false);
-      }, 500);
+             subtype: getValueByFuzzyKey(row, "Subtype"),
+             type: getValueByFuzzyKey(row, "Type"),
+             status: getValueByFuzzyKey(row, "Status") || "Assign planning",
+             phase: getValueByFuzzyKey(row, "Phase"),
+             block: getValueByFuzzyKey(row, "Block", "Block number") || '',
+             zone: getValueByFuzzyKey(row, "Zone") || '',
+             scheduleStartDate: parseDateSafe(getValueByFuzzyKey(row, "Schedule start date", "Start Date")),
+             scheduleEndDate: parseDateSafe(getValueByFuzzyKey(row, "Schedule end date", "End Date")),
+             userConnected: getValueByFuzzyKey(row, "User connected"),
+             createdBy: getValueByFuzzyKey(row, "Created by"),
+             capitalContribution: getValueByFuzzyKey(row, "Capital contribution"),
+             nominatedContractor: getValueByFuzzyKey(row, "Nominated contractor"),
+             urgent: String(getValueByFuzzyKey(row, "Urgent")).toLowerCase() === 'yes',
+             lastShutdown: getValueByFuzzyKey(row, "Last shutdown"),
+             planningEngineer: getValueByFuzzyKey(row, "Planning engineer assigned"),
+             constructionEngineer: getValueByFuzzyKey(row, "Construction engineer assigned"),
+             supervisor: getValueByFuzzyKey(row, "Supervisor assigned"),
+             wayleaveNumber: getValueByFuzzyKey(row, "Wayleave number"),
+             plannedTotalCost: getValueByFuzzyKey(row, "Planned total cost"),
+             plannedMaterialCost: getValueByFuzzyKey(row, "Planned material cost"),
+             plannedServiceCost: getValueByFuzzyKey(row, "Planned service cost"),
+             paymentDate: parseDateSafe(getValueByFuzzyKey(row, "Payment date")),
+             totalPower: getValueByFuzzyKey(row, "Total power"),
+             contractorAssignDate: parseDateSafe(getValueByFuzzyKey(row, "Contractor assign date")),
+             workOrder: getValueByFuzzyKey(row, "IO/ Work Order", "Work Order"),
+             plotNumber: getValueByFuzzyKey(row, "Plot Number", "Parcel / Plot number", "Plot"),
+             accountNumber: getValueByFuzzyKey(row, "Account number"),
+             customerCpr: getValueByFuzzyKey(row, "Customer CPR"),
+             referenceNumber: getValueByFuzzyKey(row, "Reference Number"),
+             jobType: getValueByFuzzyKey(row, "Job type"),
+             governorate: getValueByFuzzyKey(row, "Governorate"),
+             nasCode: getValueByFuzzyKey(row, "NAS Code"),
+             description: getValueByFuzzyKey(row, "Description"),
+             mtcContractor: getValueByFuzzyKey(row, "MTC Contractor"),
+             workflowEntryDate: parseDateSafe(getValueByFuzzyKey(row, "Workflow entry state date")),
+             contractorPaymentDate: parseDateSafe(getValueByFuzzyKey(row, "Contractor Payment Date")),
+             installationContractor: getValueByFuzzyKey(row, "Installation contractor"),
+             createdAt: new Date().toISOString()
+      }));
+      onUpload(mapped);
+      setIsProcessing(false);
     };
     reader.readAsBinaryString(file);
   };
 
   return (
-     <div className="border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl p-10 text-center hover:border-emerald-500 transition-colors bg-slate-50/50 dark:bg-slate-900/50">
+     <div className="border-2 border-dashed border-slate-300 dark:border-slate-800 rounded-2xl p-10 text-center hover:border-emerald-500 transition-colors bg-slate-50 dark:bg-slate-900/50 group animate-fade-in-up">
         {isProcessing ? <Icons.Spinner className="w-10 h-10 mx-auto text-emerald-500 animate-spin" /> : (
             <>
-                <Icons.Excel className="w-12 h-12 mx-auto text-emerald-500 mb-4" />
+                <Icons.Excel className="w-12 h-12 mx-auto text-emerald-500 mb-4 group-hover:scale-110 transition-transform" />
                 <p className="font-bold text-slate-800 dark:text-white text-lg">Upload Spreadsheet</p>
                 <input type="file" className="hidden" id="main-upload" accept=".xlsx, .xls" onChange={(e) => e.target.files?.[0] && processFile(e.target.files[0])} />
-                <label htmlFor="main-upload" className="inline-block mt-4 px-6 py-2 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-lg font-bold cursor-pointer">Select File</label>
+                <label htmlFor="main-upload" className="inline-block mt-4 px-6 py-2 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-lg font-bold cursor-pointer hover:bg-slate-800 transition-transform active:scale-95 shadow-md">Select File</label>
             </>
         )}
      </div>
@@ -824,32 +371,25 @@ const App: React.FC = () => {
   const [records, setRecords] = useState<RecordItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('All');
-  const [darkMode, setDarkMode] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
   const [editingRecord, setEditingRecord] = useState<RecordItem | null>(null);
-  const [aiInsight, setAiInsight] = useState('');
-  const [generatingInsight, setGeneratingInsight] = useState(false);
   const [paidPlots, setPaidPlots] = useState<Set<string>>(new Set());
 
   useEffect(() => { loadRecords(); }, []);
-  useEffect(() => { 
-    if (darkMode) document.documentElement.classList.add('dark');
-    else document.documentElement.classList.remove('dark');
-  }, [darkMode]);
 
   const loadRecords = async () => {
     setLoading(true);
     const data = await getRecords();
     setRecords(data);
     
-    // Check payment status for all loaded records
-    const plots = data.map(r => r.plotNumber).filter(Boolean) as string[];
+    // Normalize plots to ensure we find matches even if data is dirty
+    const plots = data.map(r => normalizePlot(r.plotNumber)).filter(Boolean);
+    
     if (plots.length > 0) {
+      // NOTE: getPaidPlotNumbers now filters to return only plots WITH valid payments
       const paid = await getPaidPlotNumbers(plots);
       setPaidPlots(paid);
     }
-    
     setLoading(false);
   };
 
@@ -862,192 +402,81 @@ const App: React.FC = () => {
     alert(`Imported ${added} records.`);
   };
 
-  const handleSaveRecord = async (id: string, updates: Partial<RecordItem>) => {
-    await updateRecord(id, updates);
-    await loadRecords();
-  };
-
-  const handleDeleteRecord = async (id: string) => {
-    if (window.confirm("Are you sure you want to delete this record?")) {
-      await deleteRecord(id);
-      await loadRecords();
-    }
-  };
+  const tableHeaders = [
+    "Label", "Subtype", "Zone", "Wayleave", "Plot No", "Account", 
+    "Ref No", "Job Type", "Created Date", "Infra Y/N"
+  ];
 
   const filteredRecords = useMemo(() => {
-    return records.filter(r => {
-      const s = searchTerm.toLowerCase();
-      const matchSearch = r.label.toLowerCase().includes(s) || r.referenceNumber.toLowerCase().includes(s) || (r.plotNumber || '').toLowerCase().includes(s);
-      const matchStatus = statusFilter === 'All' || r.status === statusFilter;
-      return matchSearch && matchStatus;
-    });
-  }, [records, searchTerm, statusFilter]);
-
-  const stats = useMemo(() => ({
-    total: records.length,
-    completed: records.filter(r => ['passed', 'work design'].includes(normalizeStatus(r.status))).length,
-    pending: records.filter(r => !['passed', 'work design', 'cancelled', 'suspended by edd'].includes(normalizeStatus(r.status))).length,
-    suspended: records.filter(r => normalizeStatus(r.status) === 'suspended by edd').length
-  }), [records]);
+    return records.filter(r => (r.label||'').toLowerCase().includes(searchTerm.toLowerCase()) || (r.plotNumber||'').includes(searchTerm));
+  }, [records, searchTerm]);
 
   if (loading && records.length === 0) return <LoadingScreen />;
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300 font-sans text-slate-900 dark:text-slate-100 flex">
-      <aside className="w-64 bg-slate-900 text-white hidden md:flex flex-col fixed h-full z-20">
-         <div className="p-6 flex items-center gap-3">
-            <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center"><Icons.Dashboard className="w-5 h-5 text-white" /></div>
-            <h1 className="font-bold text-lg tracking-tight">PlanManager</h1>
-         </div>
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 font-sans text-slate-900 dark:text-slate-100 flex">
+      <aside className="w-64 bg-slate-900 text-white hidden md:flex flex-col fixed h-full z-20 shadow-2xl">
+         <div className="p-6 flex items-center gap-3"><div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center animate-pulse-slow"><Icons.Dashboard className="w-5 h-5 text-white" /></div><h1 className="font-bold text-lg tracking-tight">PlanManager</h1></div>
          <nav className="flex-1 px-4 py-6 space-y-2">
-            <button onClick={() => setCurrentView('dashboard')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-colors ${currentView === 'dashboard' ? 'bg-white/10 text-emerald-400' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
-                <Icons.Dashboard className="w-5 h-5" /> Dashboard
-            </button>
-            <button onClick={() => { setCurrentView('dashboard'); setShowUpload(true); }} className="w-full flex items-center gap-3 px-4 py-3 text-slate-400 hover:text-white hover:bg-white/5 rounded-xl font-medium transition-colors">
-                <Icons.Upload className="w-5 h-5" /> Import Data
-            </button>
-            <button onClick={() => setCurrentView('calculator')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-colors ${currentView === 'calculator' ? 'bg-white/10 text-emerald-400' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
-                <Icons.Calculator className="w-5 h-5" /> Infra CC Calc
-            </button>
-            <button onClick={() => setCurrentView('chat')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-colors ${currentView === 'chat' ? 'bg-white/10 text-emerald-400' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
-                <Icons.ChatBubble className="w-5 h-5" /> AI Assistant
-            </button>
+            {['dashboard', 'calculator', 'chat'].map(v => (
+                <button key={v} onClick={() => setCurrentView(v as any)} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium capitalize transition-all duration-200 ${currentView === v ? 'bg-white/10 text-emerald-400 translate-x-1 shadow-inner' : 'text-slate-400 hover:text-white hover:bg-white/5 hover:translate-x-1'}`}>
+                    {v === 'dashboard' ? <Icons.Dashboard /> : v === 'calculator' ? <Icons.Calculator /> : <Icons.ChatBubble />} {v}
+                </button>
+            ))}
          </nav>
       </aside>
 
       <main className="flex-1 md:ml-64 p-4 md:p-8 overflow-y-auto">
-        <header className="flex justify-between items-center mb-8">
-            <div>
-                <h2 className="text-2xl font-bold text-slate-800 dark:text-white">
-                  {currentView === 'calculator' ? 'Infrastructure Calculator' : currentView === 'chat' ? 'AI Assistant' : 'Project Overview'}
-                </h2>
-                <p className="text-slate-500 dark:text-slate-400 text-sm">Welcome back, system operational.</p>
-            </div>
-            <div className="flex gap-3">
-                 <button onClick={() => setDarkMode(!darkMode)} className="p-2.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:text-emerald-500 transition-colors">
-                    {darkMode ? <Icons.Sun className="w-5 h-5" /> : <Icons.Moon className="w-5 h-5" />}
-                </button>
-            </div>
-        </header>
-
-        {currentView === 'calculator' ? (
-            <InfraCalculatorPage />
-        ) : currentView === 'chat' ? (
-            <ChatPage records={records} />
-        ) : (
+        {currentView === 'calculator' ? <InfraCalculatorPage /> : currentView === 'chat' ? <ChatPage records={records} /> : (
             <div className="animate-fade-in">
-                {/* Dashboard View */}
-                {aiInsight && (
-                    <div className="mb-8 p-6 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-xl relative overflow-hidden animate-fade-in">
-                        <div className="relative z-10">
-                            <div className="flex justify-between mb-4"><h3 className="font-bold flex gap-2"><Icons.AI /> Gemini Analysis</h3><button onClick={() => setAiInsight('')}><Icons.Close /></button></div>
-                            <p className="whitespace-pre-wrap text-sm">{aiInsight}</p>
-                        </div>
-                    </div>
-                )}
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                    {/* Stats Column */}
-                    <div className="md:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm flex items-center gap-4">
-                            <div className="w-12 h-12 rounded-xl bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center text-blue-600"><Icons.Dashboard /></div>
-                            <div><p className="text-xs font-bold uppercase text-slate-500">Total Projects</p><p className="text-2xl font-bold">{stats.total}</p></div>
-                        </div>
-                        <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm flex items-center gap-4">
-                            <div className="w-12 h-12 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 flex items-center justify-center text-emerald-600"><Icons.Check /></div>
-                            <div><p className="text-xs font-bold uppercase text-slate-500">Completed</p><p className="text-2xl font-bold">{stats.completed}</p></div>
-                        </div>
-                        <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm flex items-center gap-4">
-                            <div className="w-12 h-12 rounded-xl bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center text-amber-600"><Icons.Clock /></div>
-                            <div><p className="text-xs font-bold uppercase text-slate-500">Pending</p><p className="text-2xl font-bold">{stats.pending}</p></div>
-                        </div>
-                        <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm flex items-center gap-4">
-                            <div className="w-12 h-12 rounded-xl bg-red-50 dark:bg-red-900/20 flex items-center justify-center text-red-600"><Icons.Alert /></div>
-                            <div><p className="text-xs font-bold uppercase text-slate-500">Suspended</p><p className="text-2xl font-bold">{stats.suspended}</p></div>
-                        </div>
-                    </div>
-
-                    {/* Task Manager Widget */}
-                    <div className="md:col-span-1 h-full min-h-[300px]">
-                       <TaskManager />
+                <div className="flex justify-between items-center mb-6">
+                    <h2 className="text-2xl font-bold text-slate-900 dark:text-white animate-slide-in-right">Project Overview</h2>
+                    <div className="flex gap-2 animate-slide-in-right" style={{ animationDelay: '100ms' }}>
+                         <input type="text" placeholder="Search..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="p-2.5 border border-slate-300 rounded-lg bg-white text-slate-900 focus:ring-1 focus:ring-blue-500 outline-none text-sm w-64 font-medium transition-shadow focus:shadow-md" />
+                         <button onClick={() => setShowUpload(true)} className="px-4 py-2 bg-slate-900 text-white rounded-lg flex gap-2 items-center text-sm font-bold hover:bg-slate-800 transition-transform active:scale-95"><Icons.Plus className="w-4 h-4" /> Add</button>
                     </div>
                 </div>
 
-                <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-6">
-                    <div className="flex gap-2 w-full md:w-auto">
-                        <div className="relative flex-1 md:w-80">
-                            <Icons.Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
-                            <input type="text" placeholder="Search projects..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 outline-none text-sm" />
-                        </div>
-                        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 outline-none text-sm">
-                            <option value="All">All Statuses</option>
-                            {STATUS_SEQUENCE.map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>
-                    </div>
-                    <div className="flex gap-2">
-                        <button onClick={() => { setGeneratingInsight(true); generateDataInsights(records).then(res => { setAiInsight(res); setGeneratingInsight(false); }); }} disabled={generatingInsight} className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl font-bold text-sm">
-                            {generatingInsight ? <Icons.Spinner className="animate-spin" /> : <Icons.AI />} Insights
-                        </button>
-                        <button onClick={() => setShowUpload(true)} className="flex items-center gap-2 px-4 py-2.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl font-bold text-sm"><Icons.Plus className="w-4 h-4" /> Add Data</button>
-                    </div>
-                </div>
+                {showUpload && <div className="mb-6"><ExcelUploader onUpload={handleExcelUpload} /><button onClick={() => setShowUpload(false)} className="text-red-600 mt-2 text-sm font-bold hover:underline">Cancel</button></div>}
 
-                {showUpload && (
-                    <div className="mb-8">
-                        <div className="flex justify-between mb-2"><h3 className="font-bold">Import</h3><button onClick={() => setShowUpload(false)}><Icons.Close /></button></div>
-                        <ExcelUploader onUpload={handleExcelUpload} />
-                    </div>
-                )}
-
-                <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden">
-                    <table className="w-full text-left">
-                        <thead className="bg-slate-50 dark:bg-slate-800/50 text-xs font-bold text-slate-500 uppercase">
-                            <tr>
-                              <th className="p-4">Project</th>
-                              <th className="p-4">Plot</th>
-                              <th className="p-4">Ref</th>
-                              <th className="p-4">Status</th>
-                              <th className="p-4">Loc</th>
-                              <th className="p-4">Date</th>
-                              <th className="p-4 text-right">Actions</th>
-                            </tr>
+                <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden overflow-x-auto animate-scale-in">
+                    <table className="w-full text-left text-sm whitespace-nowrap">
+                        <thead className="bg-slate-50 dark:bg-slate-800/50 text-xs font-bold text-slate-600 uppercase tracking-wider">
+                            <tr>{tableHeaders.map(h => <th key={h} className="p-4 border-b border-slate-200 dark:border-slate-800">{h}</th>)}<th className="p-4 border-b border-slate-200 dark:border-slate-800">Actions</th></tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                            {filteredRecords.length > 0 ? filteredRecords.map(r => (
-                                <tr key={r.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 group">
-                                    <td className="p-4">
-                                        <div className="font-bold flex items-center gap-2">
-                                          {r.label}
-                                          {r.plotNumber && paidPlots.has(r.plotNumber) && (
-                                            <div className="relative group/tooltip">
-                                              <Icons.CreditCard className="w-4 h-4 text-amber-500 animate-pulse" />
-                                              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-slate-800 text-white text-xs rounded opacity-0 group-hover/tooltip:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
-                                                Fees Paid
-                                              </span>
-                                            </div>
-                                          )}
-                                        </div>
+                            {filteredRecords.map((r, index) => {
+                                const hasInfra = r.plotNumber && paidPlots.has(normalizePlot(r.plotNumber));
+                                return (
+                                <tr key={r.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors animate-fade-in-up" style={{ animationDelay: `${index * 30}ms`, animationFillMode: 'both' }}>
+                                    <td className="p-4 font-bold text-slate-900 dark:text-white">{r.label}</td>
+                                    <td className="p-4 text-slate-700 dark:text-slate-300">{r.subtype || '-'}</td>
+                                    <td className="p-4 text-slate-700 dark:text-slate-300">{r.zone}</td>
+                                    <td className="p-4 text-slate-700 dark:text-slate-300">{r.wayleaveNumber}</td>
+                                    <td className="p-4 font-mono font-bold text-slate-800 dark:text-slate-200">{r.plotNumber || '-'}</td>
+                                    <td className="p-4 text-slate-700 dark:text-slate-300">{r.accountNumber}</td>
+                                    <td className="p-4 text-slate-700 dark:text-slate-300">{r.referenceNumber}</td>
+                                    <td className="p-4 text-slate-700 dark:text-slate-300">{r.jobType || '-'}</td>
+                                    <td className="p-4 text-slate-700 dark:text-slate-300">{parseDateSafe(r.createdAt)}</td>
+                                    <td className="p-4 font-bold text-center">
+                                        {hasInfra ? (
+                                            <span className="inline-flex items-center justify-center w-12 py-1 bg-red-100 text-red-700 rounded-md border border-red-200 text-xs uppercase tracking-wide animate-pulse-slow">Yes</span>
+                                        ) : (
+                                            <span className="inline-flex items-center justify-center w-12 py-1 bg-green-100 text-green-700 rounded-md border border-green-200 text-xs uppercase tracking-wide">No</span>
+                                        )}
                                     </td>
-                                    <td className="p-4 font-mono text-sm font-semibold text-slate-600 dark:text-slate-300">
-                                      {r.plotNumber || '-'}
-                                    </td>
-                                    <td className="p-4 font-mono text-sm">{r.referenceNumber || '-'}</td>
-                                    <td className="p-4"><span className={`px-2.5 py-1 rounded-full text-xs font-bold capitalize ${getStatusColor(r.status)}`}>{r.status}</span></td>
-                                    <td className="p-4 text-sm">{r.block} / {r.zone}</td>
-                                    <td className="p-4 text-sm">{new Date(r.scheduleStartDate).toLocaleDateString()}</td>
-                                    <td className="p-4 text-right flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <button onClick={() => setEditingRecord(r)} className="p-2 hover:bg-slate-100 rounded-lg text-blue-500"><Icons.Edit className="w-4 h-4" /></button>
-                                        <button onClick={() => handleDeleteRecord(r.id)} className="p-2 hover:bg-slate-100 rounded-lg text-red-500"><Icons.Trash className="w-4 h-4" /></button>
+                                    <td className="p-4 text-right">
+                                        <button onClick={() => setEditingRecord(r)} className="text-blue-600 hover:text-blue-800 p-1.5 rounded-md hover:bg-blue-50 transition-colors"><Icons.Edit className="w-4 h-4" /></button>
+                                        <button onClick={() => { if(confirm('Delete?')) { deleteRecord(r.id).then(loadRecords); } }} className="text-red-600 hover:text-red-800 p-1.5 rounded-md hover:bg-red-50 transition-colors"><Icons.Trash className="w-4 h-4" /></button>
                                     </td>
                                 </tr>
-                            )) : <tr><td colSpan={7} className="p-12 text-center text-slate-400">No records found</td></tr>}
+                            )})}
                         </tbody>
                     </table>
                 </div>
             </div>
         )}
-
-        <EditRecordModal isOpen={!!editingRecord} record={editingRecord} onClose={() => setEditingRecord(null)} onSave={handleSaveRecord} />
+        <EditRecordModal isOpen={!!editingRecord} record={editingRecord} onClose={() => setEditingRecord(null)} onSave={async (id, up) => { await updateRecord(id, up); loadRecords(); }} />
       </main>
     </div>
   );

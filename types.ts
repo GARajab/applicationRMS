@@ -1,25 +1,57 @@
 export interface RecordItem {
   id: string;
-  label: string;            // 1. Label
-  status: string;           // 2. Status
-  block: string;            // 3. Block
-  zone: string;             // 4. Zone
-  scheduleStartDate: string; // 5. Schedule start date (ISO string)
-  wayleaveNumber: string;   // 6. Wayleave number
-  accountNumber: string;    // 7. Account number
-  referenceNumber: string;  // 8. Reference Number
-  requireUSP: boolean;      // 9. Require USP
-  sentToUSPDate?: string;   // 10. Sent to USP Date (ISO string)
-  justification?: string;   // 11. Justification for suspension
-  createdAt: string;        // System field
+  label: string;            // Label
+  subtype?: string;         // Subtype
+  type?: string;            // Type
+  status: string;           // Status
+  phase?: string;           // Phase
+  block: string;            // Block
+  zone: string;             // Zone
+  scheduleStartDate: string; // Schedule start date
+  scheduleEndDate?: string;  // Schedule end date
+  userConnected?: string;    // User connected
+  createdBy?: string;        // Created by
+  capitalContribution?: string; // Capital contribution
+  nominatedContractor?: string; // Nominated contractor
+  urgent?: boolean;          // Urgent
+  lastShutdown?: string;     // Last shutdown
+  planningEngineer?: string; // Planning engineer assigned
+  constructionEngineer?: string; // Construction engineer assigned
+  supervisor?: string;       // Supervisor assigned
+  wayleaveNumber: string;    // Wayleave number
+  plannedTotalCost?: string; // Planned total cost
+  plannedMaterialCost?: string; // Planned material cost
+  plannedServiceCost?: string;  // Planned service cost
+  paymentDate?: string;      // Payment date
+  totalPower?: string;       // Total power
+  contractorAssignDate?: string; // Contractor assign date
+  workOrder?: string;        // IO/ Work Order
+  plotNumber?: string;       // Plot Number
+  accountNumber: string;     // Account number
+  customerCpr?: string;      // Customer CPR
+  referenceNumber: string;   // Reference Number
+  jobType?: string;          // Job type
+  governorate?: string;      // Governorate
+  nasCode?: string;          // NAS Code
+  description?: string;      // Description
+  mtcContractor?: string;    // MTC Contractor
+  workflowEntryDate?: string; // Workflow entry state date
+  contractorPaymentDate?: string; // Contractor Payment Date
+  installationContractor?: string; // Installation contractor
+  
+  // Existing fields kept for compatibility or internal logic
+  requireUSP: boolean;
+  sentToUSPDate?: string;
+  justification?: string;
+  createdAt: string;
 
-  // New Fields
+  // Additional fields from previous requirements (kept for safety)
   applicationNumber?: string;
   bpRequestNumber?: string;
   versionNumber?: string;
   constructionType?: string;
   ewaFeeStatus?: string;
-  applicationStatus?: string; // Distinct from internal 'status'
+  applicationStatus?: string;
   landOwnerId?: string;
   ownerNameEn?: string;
   ownerNameAr?: string;
@@ -27,11 +59,10 @@ export interface RecordItem {
   mouGatedCommunity?: string;
   buildingNumber?: string;
   roadNumber?: string;
-  plotNumber?: string; // Parcel / Plot number
   titleDeed?: string;
   buildableArea?: string;
   momaaLoad?: string;
-  applicationDate?: string; // Date
+  applicationDate?: string;
   nationality?: string;
   propertyCategory?: string;
   usageNature?: string;
