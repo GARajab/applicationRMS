@@ -1,3 +1,4 @@
+
 import { supabase } from './supabaseClient';
 import { RecordItem, InfraReferenceItem } from '../types';
 
@@ -8,15 +9,26 @@ const normalizePlot = (p: string | number | null | undefined): string => {
 };
 
 /**
- * Prunes keys from an object that are undefined, null, or empty strings
- * This prevents Supabase from trying to insert into columns that might not exist 
- * in the schema but are present in the TypeScript interface.
+ * List of columns guaranteed to exist in the standard database schema.
+ * Sending columns not in this list causes Supabase 400 Bad Request (PGRST204).
+ */
+const SAFE_COLUMNS = [
+  'label', 'status', 'block', 'zone', 'scheduleStartDate', 
+  'wayleaveNumber', 'accountNumber', 'referenceNumber', 
+  'requireUSP', 'sentToUSPDate', 'justification', 'createdAt',
+  'plotNumber', 'applicationNumber', 'momaaLoad'
+];
+
+/**
+ * Prunes keys from an object that are not in the safe columns list
+ * or are empty/null values.
  */
 const prunePayload = (obj: any) => {
   const pruned: any = {};
   Object.keys(obj).forEach(key => {
     const val = obj[key];
-    if (val !== undefined && val !== null && val !== '') {
+    // Check if key is in our safe list and has a meaningful value
+    if (SAFE_COLUMNS.includes(key) && val !== undefined && val !== null && val !== '') {
       pruned[key] = val;
     }
   });
@@ -52,13 +64,11 @@ export const getRecords = async (): Promise<RecordItem[]> => {
 };
 
 export const addRecord = async (record: RecordItem): Promise<RecordItem | null> => {
-  // Prune the payload to only send fields that actually have values
   const payload = prunePayload({ ...record });
   
-  // Ensure ID is not sent for new records if it's empty
-  if (!payload.id) delete payload.id;
+  // Never send ID for new records
+  delete payload.id;
   
-  // Normalize plot on save
   if (payload.plotNumber) payload.plotNumber = normalizePlot(payload.plotNumber);
 
   const { data, error } = await supabase
@@ -77,7 +87,6 @@ export const addRecord = async (record: RecordItem): Promise<RecordItem | null> 
 export const updateRecord = async (id: string, updates: Partial<RecordItem>): Promise<boolean> => {
   const payload = prunePayload({ ...updates });
   
-  // Normalize plot on update
   if (payload.plotNumber) payload.plotNumber = normalizePlot(payload.plotNumber);
 
   const { error } = await supabase
@@ -104,8 +113,6 @@ export const deleteRecord = async (id: string): Promise<boolean> => {
   }
   return true;
 };
-
-// --- Infra References Methods ---
 
 export const getPaidPlotNumbers = async (plotNumbers: string[]): Promise<Set<string>> => {
   const validPlots = [...new Set(plotNumbers.map(p => normalizePlot(p)).filter(p => p !== ''))];
@@ -163,19 +170,13 @@ export const searchInfraReferences = async (plotNumber: string): Promise<InfraRe
 
 export const saveInfraReferences = async (items: Partial<InfraReferenceItem>[]): Promise<boolean> => {
   if (items.length === 0) return true;
-  const CHUNK_SIZE = 1000;
+  const CHUNK_SIZE = 500;
   let hasError = false;
   for (let i = 0; i < items.length; i += CHUNK_SIZE) {
     const chunk = items.slice(i, i + CHUNK_SIZE);
-    const cleanChunk = chunk.map(item => {
-       const clean: any = prunePayload(item);
-       if (clean.plotNumber) clean.plotNumber = normalizePlot(clean.plotNumber);
-       return clean;
-    });
-
     const { error } = await supabase
       .from('infra_references')
-      .insert(cleanChunk);
+      .insert(chunk);
 
     if (error) {
       console.error(`Error saving chunk ${i}:`, error);
@@ -184,17 +185,4 @@ export const saveInfraReferences = async (items: Partial<InfraReferenceItem>[]):
     }
   }
   return !hasError;
-};
-
-export const clearInfraReferences = async (): Promise<boolean> => {
-  const { error } = await supabase
-    .from('infra_references')
-    .delete()
-    .neq('id', '00000000-0000-0000-0000-000000000000'); 
-
-  if (error) {
-    console.error('Error clearing infra references:', error);
-    return false;
-  }
-  return true;
 };

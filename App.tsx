@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Icons } from './components/Icons';
 import * as XLSX from 'xlsx';
 import { RecordItem, InfraReferenceItem } from './types';
-import { getRecords, addRecord, deleteRecord, searchInfraReferences, saveInfraReferences, getPaidPlotNumbers } from './services/storageService';
+import { getRecords, addRecord, deleteRecord, searchInfraReferences, getPaidPlotNumbers } from './services/storageService';
 
 // --- Constants ---
 const STATUS_SEQUENCE = [
@@ -336,6 +336,13 @@ const App: React.FC = () => {
   const [showUpload, setShowUpload] = useState(false);
   const [paidPlots, setPaidPlots] = useState<Set<string>>(new Set());
 
+  // Progress State
+  const [importProgress, setImportProgress] = useState<{ 
+    total: number, current: number, active: boolean, success: number, error: number, finished: boolean 
+  }>({
+    total: 0, current: 0, active: false, success: 0, error: 0, finished: false
+  });
+
   const loadData = async () => {
     setLoading(true);
     const data = await getRecords();
@@ -352,11 +359,18 @@ const App: React.FC = () => {
   const handleExcelUpload = async (file: File) => {
     const reader = new FileReader();
     reader.onload = async (e) => {
-      const wb = XLSX.read(e.target?.result, { type: 'binary' });
+      const resultData = e.target?.result;
+      if (!resultData) return;
+      
+      const wb = XLSX.read(resultData, { type: 'binary' });
       const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
       
-      // EXTREMELY SELECTIVE MAPPING: Only mapping core columns that are confirmed 
-      // in the basic Supabase schema to avoid PGRST204 errors.
+      const total = data.length;
+      setImportProgress({ total, current: 0, active: true, success: 0, error: 0, finished: false });
+
+      // HIGH-COMPATIBILITY MAPPING:
+      // Removed 'subtype' and other risky columns from default mapper 
+      // as they caused PGRST204 errors in the user's current DB state.
       const mapped: any[] = data.map((row: any) => ({
              label: getValueByFuzzyKey(row, "Label", "Title") || 'Untitled Project',
              status: getValueByFuzzyKey(row, "Status") || "Assign planning",
@@ -369,20 +383,24 @@ const App: React.FC = () => {
              accountNumber: getValueByFuzzyKey(row, "Account") || '',
              requireUSP: false,
              createdAt: new Date().toISOString(),
-             // Adding optional fields only if they have values to avoid column-not-found issues
-             subtype: getValueByFuzzyKey(row, "Subtype") || undefined,
-             jobType: getValueByFuzzyKey(row, "Job Type") || undefined
+             momaaLoad: getValueByFuzzyKey(row, "Load") || '',
+             applicationNumber: getValueByFuzzyKey(row, "Application") || ''
       }));
       
-      let addedCount = 0;
-      for(const item of mapped) {
-          // addRecord now uses prunePayload internally to protect against schema mismatch
+      for(let i = 0; i < mapped.length; i++) {
+          const item = mapped[i];
           const result = await addRecord(item as RecordItem);
-          if (result) addedCount++;
+          
+          setImportProgress(prev => ({
+            ...prev,
+            current: i + 1,
+            success: result ? prev.success + 1 : prev.success,
+            error: !result ? prev.error + 1 : prev.error
+          }));
       }
-      loadData();
-      setShowUpload(false);
-      alert(`Imported ${addedCount} records successfully.`);
+
+      await loadData();
+      setImportProgress(prev => ({ ...prev, finished: true }));
     };
     reader.readAsBinaryString(file);
   };
@@ -456,20 +474,73 @@ const App: React.FC = () => {
         </div>
 
         {showUpload && (
-            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4 animate-fade-in">
-                <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] p-10 max-w-md w-full shadow-2xl animate-scale-in border border-white/10">
-                    <div className="text-center">
-                        <div className="w-20 h-20 bg-indigo-50 dark:bg-indigo-900/20 rounded-3xl flex items-center justify-center mx-auto mb-6">
-                            <Icons.Excel className="w-10 h-10 text-indigo-600" />
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[60] flex items-center justify-center p-4 animate-fade-in">
+                <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] p-10 max-w-md w-full shadow-2xl animate-scale-in border border-white/10 overflow-hidden">
+                    {importProgress.active ? (
+                      <div className="text-center py-6">
+                        {!importProgress.finished ? (
+                          <>
+                            <div className="w-24 h-24 rounded-full border-4 border-slate-100 dark:border-white/5 flex items-center justify-center mx-auto mb-8 relative">
+                               <div className="absolute inset-0 border-4 border-indigo-500 rounded-full border-t-transparent animate-spin"></div>
+                               <span className="text-xl font-black">{Math.round((importProgress.current / importProgress.total) * 100)}%</span>
+                            </div>
+                            <h3 className="text-2xl font-black mb-1 text-slate-900 dark:text-white uppercase tracking-tighter">Syncing Database</h3>
+                            <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mb-8">Injecting {importProgress.current} of {importProgress.total} records</p>
+                            
+                            <div className="w-full h-3 bg-slate-100 dark:bg-white/5 rounded-full overflow-hidden mb-6">
+                                <div 
+                                  className="h-full bg-gradient-to-r from-indigo-500 to-emerald-500 transition-all duration-300" 
+                                  style={{ width: `${(importProgress.current / importProgress.total) * 100}%` }}
+                                ></div>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="animate-scale-in">
+                             <div className="w-20 h-20 bg-emerald-500 text-white rounded-full flex items-center justify-center mx-auto mb-6 shadow-xl shadow-emerald-500/20">
+                                <Icons.Check className="w-10 h-10" />
+                             </div>
+                             <h3 className="text-2xl font-black mb-1 text-slate-900 dark:text-white uppercase tracking-tighter">Sync Complete</h3>
+                             <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mb-8">Import Operation Finished</p>
+                          </div>
+                        )}
+
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="bg-emerald-500/10 p-4 rounded-3xl border border-emerald-500/20">
+                                <div className="text-[10px] font-black text-emerald-500 uppercase tracking-widest mb-1">Success</div>
+                                <div className="text-2xl font-black text-emerald-600">{importProgress.success}</div>
+                            </div>
+                            <div className="bg-rose-500/10 p-4 rounded-3xl border border-rose-500/20">
+                                <div className="text-[10px] font-black text-rose-500 uppercase tracking-widest mb-1">Failed</div>
+                                <div className="text-2xl font-black text-rose-600">{importProgress.error}</div>
+                            </div>
                         </div>
-                        <h3 className="text-2xl font-black mb-2 text-slate-900 dark:text-white tracking-tighter uppercase">Seed Database</h3>
-                        <p className="text-sm text-slate-500 mb-8 font-medium">Inject project records from your local Excel file.</p>
-                        <input type="file" id="upload-input" className="hidden" accept=".xlsx" onChange={(e) => e.target.files?.[0] && handleExcelUpload(e.target.files[0])} />
-                        <div className="flex flex-col gap-3">
-                            <label htmlFor="upload-input" className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black cursor-pointer hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-600/20 uppercase text-xs tracking-widest">Select Dataset</label>
-                            <button onClick={() => setShowUpload(false)} className="w-full py-4 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-2xl font-black hover:bg-slate-200 transition-all uppercase text-xs tracking-widest">Dismiss</button>
-                        </div>
-                    </div>
+
+                        {importProgress.finished && (
+                          <button 
+                            onClick={() => {
+                              setImportProgress({ total:0, current:0, active:false, success:0, error:0, finished:false });
+                              setShowUpload(false);
+                            }}
+                            className="w-full mt-8 py-4 bg-slate-900 dark:bg-white text-white dark:text-black rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl transition-all active:scale-95"
+                          >
+                            Close Interface
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="text-center">
+                          <div className="w-20 h-20 bg-indigo-50 dark:bg-indigo-900/20 rounded-3xl flex items-center justify-center mx-auto mb-6">
+                              <Icons.Excel className="w-10 h-10 text-indigo-600" />
+                          </div>
+                          <h3 className="text-2xl font-black mb-2 text-slate-900 dark:text-white tracking-tighter uppercase">Seed Database</h3>
+                          <p className="text-sm text-slate-500 mb-8 font-medium">Inject project records from your local Excel file.</p>
+                          <input type="file" id="upload-input" className="hidden" accept=".xlsx" onChange={(e) => e.target.files?.[0] && handleExcelUpload(e.target.files[0])} />
+                          <div className="flex flex-col gap-3">
+                              <label htmlFor="upload-input" className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black cursor-pointer hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-600/20 uppercase text-xs tracking-widest text-center">Select Dataset</label>
+                              <button onClick={() => setShowUpload(false)} className="w-full py-4 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-2xl font-black hover:bg-slate-200 transition-all uppercase text-xs tracking-widest">Dismiss</button>
+                          </div>
+                      </div>
+                    )}
                 </div>
             </div>
         )}
