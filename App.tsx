@@ -11,7 +11,7 @@ import { getRecords, addRecord, deleteRecord, searchInfraReferences, getPaidPlot
 const UI_STATUS_OPTIONS = ["In Design", "GIS", "WL / GSN", "USP", "Passed"];
 const STATUS_SEQUENCE = ["All Projects", ...UI_STATUS_OPTIONS];
 
-// The strictly allowed statuses from the Excel Source
+// The strictly allowed statuses from the Excel Source (Normalized for display)
 const VALID_IMPORT_STATUSES = [
   "Assign planning", "Site Visit", "Design", "Design approval", 
   "GIS digitalization", "Wayleave", "Cost estimation", 
@@ -25,14 +25,23 @@ const EWA_LOGO = "https://www.gdnonline.com/gdnimages/20230724/20230724111752EWA
 
 /**
  * Maps Excel Source Statuses to the new UI Status Categories
+ * Logic is case-insensitive for robustness.
  */
 const mapSourceToUIStatus = (sourceStatus: string): string => {
-  const s = sourceStatus.trim();
-  if (["Assign planning", "Site Visit", "Design", "Design approval", "Engineer approval", "1Redesign"].includes(s)) return "In Design";
-  if (["GIS digitalization"].includes(s)) return "GIS";
-  if (["Wayleave"].includes(s)) return "WL / GSN";
-  if (["Suspended by EDD", "Cost estimation", "Attach Utilities Drawing"].includes(s)) return "USP";
-  if (["Work Design"].includes(s)) return "Passed";
+  const s = sourceStatus.trim().toLowerCase();
+  
+  const inDesign = ["assign planning", "site visit", "design", "design approval", "engineer approval", "1redesign"];
+  const gis = ["gis digitalization"];
+  const wl = ["wayleave"];
+  const usp = ["suspended by edd", "cost estimation", "attach utilities drawing"];
+  const passed = ["work design"];
+
+  if (inDesign.includes(s)) return "In Design";
+  if (gis.includes(s)) return "GIS";
+  if (wl.includes(s)) return "WL / GSN";
+  if (usp.includes(s)) return "USP";
+  if (passed.includes(s)) return "Passed";
+  
   return "In Design"; // Default fallback
 };
 
@@ -407,41 +416,44 @@ const App: React.FC = () => {
       const stagedProjects: any[] = [];
       const stagedInfra: any[] = [];
 
-      rawData.forEach((row: any) => {
-        const ref = getValueByFuzzyKey(row, "Reference", "Ref", "Project Ref");
-        const plot = normalizePlot(getValueByFuzzyKey(row, "Plot Number", "Parcel", "Plot"));
-        const sourceStatus = getValueByFuzzyKey(row, "Status").trim();
-        
-        // CRITERIA 1: A4 or A5 in Reference Number
-        // CRITERIA 2: Status must be in VALID_IMPORT_STATUSES list
-        const isA4A5 = ref.toUpperCase().includes('A4') || ref.toUpperCase().includes('A5');
-        const isValidStatus = VALID_IMPORT_STATUSES.includes(sourceStatus);
+      // Create a lowercase version of the valid statuses for case-insensitive matching
+      const lowerValidStatuses = VALID_IMPORT_STATUSES.map(s => s.toLowerCase().trim());
 
-        if (isA4A5 && isValidStatus) {
+      rawData.forEach((row: any) => {
+        const ref = getValueByFuzzyKey(row, "Reference Number", "Reference", "Ref", "Project Ref").toUpperCase();
+        const plot = normalizePlot(getValueByFuzzyKey(row, "Plot Number", "Parcel", "Plot", "Plot No"));
+        const sourceStatusRaw = getValueByFuzzyKey(row, "Status", "Workflow Status", "Source Status").trim();
+        const sourceStatusLower = sourceStatusRaw.toLowerCase();
+        
+        // Removed A4/A5 filter as requested.
+        // CRITERIA: Status must be in VALID_IMPORT_STATUSES list (Case Insensitive)
+        const isValidStatus = lowerValidStatuses.includes(sourceStatusLower);
+
+        if (isValidStatus) {
           stagedProjects.push({
-            label: getValueByFuzzyKey(row, "Label", "Title", "Name") || 'Untitled Project',
+            label: getValueByFuzzyKey(row, "Label", "Title", "Name", "Project Name") || 'Untitled Project',
             // MAP Source Status to Dashboard Status Category
-            status: mapSourceToUIStatus(sourceStatus),
+            status: mapSourceToUIStatus(sourceStatusRaw),
             plotNumber: plot,
             referenceNumber: ref,
-            zone: getValueByFuzzyKey(row, "Zone") || '',
-            block: getValueByFuzzyKey(row, "Block") || '',
-            scheduleStartDate: parseDateSafe(getValueByFuzzyKey(row, "Schedule Start", "Start Date")),
-            wayleaveNumber: getValueByFuzzyKey(row, "Wayleave") || '',
-            accountNumber: getValueByFuzzyKey(row, "Account") || '',
+            zone: getValueByFuzzyKey(row, "Zone", "Investment Zone") || '',
+            block: getValueByFuzzyKey(row, "Block", "Block Number") || '',
+            scheduleStartDate: parseDateSafe(getValueByFuzzyKey(row, "Schedule Start", "Start Date", "Workflow Entry")),
+            wayleaveNumber: getValueByFuzzyKey(row, "Wayleave", "Wayleave No") || '',
+            accountNumber: getValueByFuzzyKey(row, "Account", "Account Number") || '',
             requireUSP: false,
             createdAt: new Date().toISOString()
           });
         } 
-        // INFRA CRITERIA: Has a Plot Number but no A4/A5 ref (kept for global database seeding)
+        // INFRA CRITERIA: Has a Plot Number (Global reference database)
         else if (plot && plot !== '') {
           stagedInfra.push({
             plotNumber: plot,
-            ownerNameEn: getValueByFuzzyKey(row, "Owner", "Name", "Client"),
-            initialPaymentDate: getValueByFuzzyKey(row, "Payment Date", "Paid Date", "First Payment"),
-            secondPayment: getValueByFuzzyKey(row, "Second Payment"),
-            thirdPayment: getValueByFuzzyKey(row, "Third Payment", "Final Payment"),
-            momaaLoad: getValueByFuzzyKey(row, "Load"),
+            ownerNameEn: getValueByFuzzyKey(row, "Owner", "Name", "Client", "Applicant"),
+            initialPaymentDate: getValueByFuzzyKey(row, "Payment Date", "Paid Date", "First Payment", "Initial Payment"),
+            secondPayment: getValueByFuzzyKey(row, "Second Payment", "Installment 2"),
+            thirdPayment: getValueByFuzzyKey(row, "Third Payment", "Final Payment", "Settlement"),
+            momaaLoad: getValueByFuzzyKey(row, "Load", "MOMAA Load"),
             createdAt: new Date().toISOString()
           });
         }
@@ -498,7 +510,7 @@ const App: React.FC = () => {
     <div className="fixed inset-0 bg-slate-900 flex items-center justify-center">
       <div className="text-center">
         <Icons.Spinner className="w-12 h-12 text-indigo-500 animate-spin mx-auto mb-4" />
-        <p className="text-slate-400 font-black text-xs uppercase tracking-widest">Rajab A4/A5 Booting...</p>
+        <p className="text-slate-400 font-black text-xs uppercase tracking-widest">Rajab Management Booting...</p>
       </div>
     </div>
   );
@@ -511,7 +523,7 @@ const App: React.FC = () => {
                 <img src={EWA_LOGO} alt="EWA Logo" className="w-full h-full object-contain" />
             </div>
             <div className="hidden lg:block">
-                <h1 className="font-black text-xl tracking-tighter leading-none uppercase">Rajab A4/A5</h1>
+                <h1 className="font-black text-xl tracking-tighter leading-none uppercase">Rajab Management</h1>
                 <p className="text-[10px] font-black text-indigo-400 tracking-[0.3em]">NEXUS SYSTEM</p>
             </div>
         </div>
@@ -564,34 +576,53 @@ const App: React.FC = () => {
 
         {showUpload && (
             <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[60] flex items-center justify-center p-4 animate-fade-in">
-                <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] p-10 max-w-md w-full shadow-2xl animate-scale-in border border-white/10 overflow-hidden">
+                <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] p-8 max-w-2xl w-full shadow-2xl animate-scale-in border border-white/10 overflow-hidden custom-scrollbar max-h-[90vh] overflow-y-auto">
                     {importProgress.active ? (
                       <div className="text-center py-6">
                         {importProgress.summaryPhase ? (
-                          <div className="animate-fade-in">
-                             <h3 className="text-2xl font-black mb-1 text-slate-900 dark:text-white uppercase tracking-tighter">Classification Result</h3>
-                             <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mb-8">Data meeting defined criteria</p>
+                          <div className="animate-fade-in text-left">
+                             <div className="text-center mb-8">
+                                <h3 className="text-2xl font-black mb-1 text-slate-900 dark:text-white uppercase tracking-tighter">Criteria Engine Scan</h3>
+                                <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Validating records against system protocols</p>
+                             </div>
                              
-                             <div className="space-y-4 mb-8">
+                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
                                 <div className="p-6 bg-indigo-50 dark:bg-indigo-950/30 rounded-3xl border border-indigo-100 dark:border-indigo-500/20 flex justify-between items-center">
                                     <div className="text-left">
-                                        <div className="font-black text-indigo-600 uppercase text-[10px] tracking-widest">A4/A5 Projects</div>
-                                        <div className="text-2xl font-black text-slate-900 dark:text-white">{importProgress.projectsDetected}</div>
+                                        <div className="font-black text-indigo-600 uppercase text-[10px] tracking-widest">Project Records</div>
+                                        <div className="text-4xl font-black text-slate-900 dark:text-white">{importProgress.projectsDetected}</div>
+                                        <div className="mt-2 text-[10px] font-bold text-slate-500">Meeting Status mapping rules</div>
                                     </div>
-                                    <Icons.Dashboard className="w-8 h-8 text-indigo-400 opacity-50" />
+                                    <Icons.Dashboard className="w-10 h-10 text-indigo-400 opacity-30" />
                                 </div>
-                                <div className="p-6 bg-slate-50 dark:bg-slate-800/30 rounded-3xl border border-slate-100 dark:border-white/5 flex justify-between items-center">
+                                <div className="p-6 bg-emerald-50 dark:bg-emerald-950/30 rounded-3xl border border-emerald-100 dark:border-emerald-500/20 flex justify-between items-center">
                                     <div className="text-left">
-                                        <div className="font-black text-slate-500 uppercase text-[10px] tracking-widest">Infrastructure Data</div>
-                                        <div className="text-2xl font-black text-slate-900 dark:text-white">{importProgress.infraDetected}</div>
+                                        <div className="font-black text-emerald-600 uppercase text-[10px] tracking-widest">Infra References</div>
+                                        <div className="text-4xl font-black text-slate-900 dark:text-white">{importProgress.infraDetected}</div>
+                                        <div className="mt-2 text-[10px] font-bold text-slate-500">Meeting Plot ID requirement</div>
                                     </div>
-                                    <Icons.Calculator className="w-8 h-8 text-slate-400 opacity-50" />
+                                    <Icons.Calculator className="w-10 h-10 text-emerald-400 opacity-30" />
                                 </div>
                              </div>
 
-                             <div className="flex gap-3">
-                                <button onClick={startSync} className="flex-1 py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl shadow-indigo-600/20">Commit to DB</button>
-                                <button onClick={() => setShowUpload(false)} className="px-6 py-4 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-2xl font-black uppercase text-xs">Cancel</button>
+                             <div className="bg-slate-50 dark:bg-white/5 rounded-3xl p-6 border border-slate-200 dark:border-white/5 mb-8">
+                                <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-4 flex items-center gap-2">
+                                  <Icons.Alert className="w-3 h-3 text-indigo-500" />
+                                  Requirements for "Project" status
+                                </h4>
+                                <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-[10px] font-bold text-slate-600 dark:text-slate-400">
+                                   {VALID_IMPORT_STATUSES.map(s => (
+                                     <div key={s} className="flex items-center gap-2">
+                                       <div className="w-1 h-1 rounded-full bg-slate-300"></div>
+                                       {s}
+                                     </div>
+                                   ))}
+                                </div>
+                             </div>
+
+                             <div className="flex gap-4">
+                                <button onClick={startSync} className="flex-1 py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl shadow-indigo-600/20 transition-all hover:bg-indigo-700">Commit to Database</button>
+                                <button onClick={() => setShowUpload(false)} className="px-8 py-4 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-2xl font-black uppercase text-xs">Dismiss</button>
                              </div>
                           </div>
                         ) : !importProgress.finished ? (
@@ -617,32 +648,28 @@ const App: React.FC = () => {
                              </div>
                              <h3 className="text-2xl font-black mb-1 text-slate-900 dark:text-white uppercase tracking-tighter">Sync Complete</h3>
                              <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mb-8">Import Operation Finished</p>
-                          </div>
-                        )}
+                             
+                             <div className="grid grid-cols-2 gap-4">
+                                <div className="bg-emerald-500/10 p-4 rounded-3xl border border-emerald-500/20">
+                                    <div className="text-[10px] font-black text-emerald-500 uppercase tracking-widest mb-1">Success</div>
+                                    <div className="text-2xl font-black text-emerald-600">{importProgress.success}</div>
+                                </div>
+                                <div className="bg-rose-500/10 p-4 rounded-3xl border border-rose-500/20">
+                                    <div className="text-[10px] font-black text-rose-500 uppercase tracking-widest mb-1">Failed</div>
+                                    <div className="text-2xl font-black text-rose-600">{importProgress.error}</div>
+                                </div>
+                             </div>
 
-                        {!importProgress.summaryPhase && (
-                          <div className="grid grid-cols-2 gap-4">
-                              <div className="bg-emerald-500/10 p-4 rounded-3xl border border-emerald-500/20">
-                                  <div className="text-[10px] font-black text-emerald-500 uppercase tracking-widest mb-1">Success</div>
-                                  <div className="text-2xl font-black text-emerald-600">{importProgress.success}</div>
-                              </div>
-                              <div className="bg-rose-500/10 p-4 rounded-3xl border border-rose-500/20">
-                                  <div className="text-[10px] font-black text-rose-500 uppercase tracking-widest mb-1">Failed</div>
-                                  <div className="text-2xl font-black text-rose-600">{importProgress.error}</div>
-                              </div>
+                             <button 
+                                onClick={() => {
+                                  setImportProgress({ total:0, current:0, active:false, success:0, error:0, finished:false, projectsDetected:0, infraDetected:0, summaryPhase: false, stagedProjects:[], stagedInfra:[] });
+                                  setShowUpload(false);
+                                }}
+                                className="w-full mt-8 py-4 bg-slate-900 dark:bg-white text-white dark:text-black rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl transition-all active:scale-95"
+                              >
+                                Close Interface
+                              </button>
                           </div>
-                        )}
-
-                        {importProgress.finished && (
-                          <button 
-                            onClick={() => {
-                              setImportProgress({ total:0, current:0, active:false, success:0, error:0, finished:false, projectsDetected:0, infraDetected:0, summaryPhase: false, stagedProjects:[], stagedInfra:[] });
-                              setShowUpload(false);
-                            }}
-                            className="w-full mt-8 py-4 bg-slate-900 dark:bg-white text-white dark:text-black rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl transition-all active:scale-95"
-                          >
-                            Close Interface
-                          </button>
                         )}
                       </div>
                     ) : (
@@ -652,6 +679,15 @@ const App: React.FC = () => {
                           </div>
                           <h3 className="text-2xl font-black mb-2 text-slate-900 dark:text-white tracking-tighter uppercase">Seed Database</h3>
                           <p className="text-sm text-slate-500 mb-8 font-medium">Inject project records from your local Excel file.</p>
+                          
+                          <div className="p-6 bg-slate-50 dark:bg-white/5 rounded-3xl mb-8 text-left">
+                            <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-3">Expected Rules:</h4>
+                            <ul className="text-[11px] font-bold text-slate-500 space-y-1">
+                              <li>• Column headers like "Status" and "Reference Number"</li>
+                              <li>• Row Status must be one of the <span className="text-indigo-500">12 defined project stages</span></li>
+                            </ul>
+                          </div>
+
                           <input type="file" id="upload-input" className="hidden" accept=".xlsx" onChange={(e) => e.target.files?.[0] && handleExcelUpload(e.target.files[0])} />
                           <div className="flex flex-col gap-3">
                               <label htmlFor="upload-input" className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black cursor-pointer hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-600/20 uppercase text-xs tracking-widest text-center">Select Dataset</label>
