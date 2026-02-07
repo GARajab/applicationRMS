@@ -16,7 +16,7 @@ const SAFE_COLUMNS = [
   'label', 'status', 'block', 'zone', 'scheduleStartDate', 
   'wayleaveNumber', 'accountNumber', 'referenceNumber', 
   'requireUSP', 'sentToUSPDate', 'justification', 'createdAt',
-  'plotNumber', 'applicationNumber', 'momaaLoad'
+  'plotNumber', 'applicationNumber', 'momaaLoad', 'subtype'
 ];
 
 /**

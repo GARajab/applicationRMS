@@ -6,17 +6,36 @@ import { RecordItem, InfraReferenceItem } from './types';
 import { getRecords, addRecord, deleteRecord, searchInfraReferences, getPaidPlotNumbers, saveInfraReferences } from './services/storageService';
 
 // --- Constants ---
-const STATUS_SEQUENCE = [
-  "All Projects", 
+
+// The Dashboard/Dropdown UI categories
+const UI_STATUS_OPTIONS = ["In Design", "GIS", "WL / GSN", "USP", "Passed"];
+const STATUS_SEQUENCE = ["All Projects", ...UI_STATUS_OPTIONS];
+
+// The strictly allowed statuses from the Excel Source
+const VALID_IMPORT_STATUSES = [
   "Assign planning", "Site Visit", "Design", "Design approval", 
   "GIS digitalization", "Wayleave", "Cost estimation", 
-  "Attach Utilities Drawing", "Engineer approval", "Redesign", 
+  "Attach Utilities Drawing", "Engineer approval", "1Redesign", 
   "Suspended by EDD", "Work Design"
 ];
 
 const EWA_LOGO = "https://www.gdnonline.com/gdnimages/20230724/20230724111752EWALogo.png";
 
 // --- Helper Functions ---
+
+/**
+ * Maps Excel Source Statuses to the new UI Status Categories
+ */
+const mapSourceToUIStatus = (sourceStatus: string): string => {
+  const s = sourceStatus.trim();
+  if (["Assign planning", "Site Visit", "Design", "Design approval", "Engineer approval", "1Redesign"].includes(s)) return "In Design";
+  if (["GIS digitalization"].includes(s)) return "GIS";
+  if (["Wayleave"].includes(s)) return "WL / GSN";
+  if (["Suspended by EDD", "Cost estimation", "Attach Utilities Drawing"].includes(s)) return "USP";
+  if (["Work Design"].includes(s)) return "Passed";
+  return "In Design"; // Default fallback
+};
+
 const parseDateSafe = (value: any): string => {
   if (!value) return '';
   const d = new Date(value);
@@ -226,8 +245,11 @@ const CalculatorView: React.FC = () => {
      (searchResult.thirdPayment && searchResult.thirdPayment.trim() !== '')
   );
 
-  const eddShare = parseFloat(fees) * ({'10':0.4, '12':0.375, '6.5':0.6923}[paymentType] || 0) || 0;
-  const finalCC = Math.max(0, (parseFloat(ccRef) || 0) - eddShare);
+  const feesVal = parseFloat(fees) || 0;
+  const ccVal = parseFloat(ccRef) || 0;
+  const shareMultiplier = {'10':0.4, '12':0.375, '6.5':0.6923}[paymentType] || 0;
+  const eddShare = feesVal * shareMultiplier;
+  const finalCC = Math.max(0, ccVal - eddShare);
 
   return (
     <div className="flex flex-col lg:flex-row gap-8 min-h-[70vh] animate-fade-in-up">
@@ -253,7 +275,7 @@ const CalculatorView: React.FC = () => {
 
         <div className="bg-white dark:bg-slate-900 p-8 rounded-[2rem] border border-slate-200 dark:border-white/5 shadow-xl">
            <h2 className="text-lg font-black mb-6 text-slate-900 dark:text-white flex items-center gap-3 uppercase tracking-tighter">
-             <Icons.Calculator className="w-5 h-5 text-emerald-500" /> Cost Recovery
+             <Icons.Calculator className="w-5 h-5 text-emerald-500" /> Audit Inputs
            </h2>
            <div className="flex gap-2 mb-6 p-1 bg-slate-100 dark:bg-black rounded-xl">
               {['10', '12', '6.5'].map(t => (
@@ -261,13 +283,28 @@ const CalculatorView: React.FC = () => {
               ))}
            </div>
            <div className="space-y-4">
-              <input type="number" placeholder="Fees (BD)" value={fees} onChange={e => setFees(e.target.value)} className="w-full p-4 rounded-2xl border border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-black font-bold outline-none focus:ring-2 focus:ring-emerald-500" />
-              <input type="number" placeholder="13/2006 CC (BD)" value={ccRef} onChange={e => setCcRef(e.target.value)} className="w-full p-4 rounded-2xl border border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-black font-bold outline-none focus:ring-2 focus:ring-emerald-500" />
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Calculated Fees (BD)</label>
+                <input type="number" placeholder="Enter Fees" value={fees} onChange={e => setFees(e.target.value)} className="w-full p-4 rounded-2xl border border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-black font-bold outline-none focus:ring-2 focus:ring-emerald-500 transition-all" />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">13/2006 Original CC (BD)</label>
+                <input type="number" placeholder="Enter Original CC" value={ccRef} onChange={e => setCcRef(e.target.value)} className="w-full p-4 rounded-2xl border border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-black font-bold outline-none focus:ring-2 focus:ring-emerald-500 transition-all" />
+              </div>
            </div>
-           {finalCC > 0 && (
-               <div className="mt-8 p-6 bg-emerald-500/10 text-emerald-500 rounded-3xl border border-emerald-500/20 animate-scale-in flex flex-col items-center">
-                  <div className="text-[10px] font-black uppercase tracking-[0.2em] opacity-60 mb-1 text-center">Final Adjusted Amount</div>
-                  <div className="text-4xl font-black">{finalCC.toFixed(3)} BD</div>
+           
+           {(feesVal > 0 || ccVal > 0) && (
+               <div className="mt-8 space-y-4 animate-scale-in">
+                  <div className="p-5 bg-indigo-500/5 rounded-3xl border border-indigo-500/10 flex justify-between items-center">
+                      <div className="text-[10px] font-black text-indigo-500 uppercase tracking-widest">EDD Share Result</div>
+                      <div className="text-xl font-black text-indigo-600">{eddShare.toFixed(3)} BD</div>
+                  </div>
+                  {finalCC > 0 && (
+                     <div className="p-6 bg-emerald-500 text-white rounded-3xl shadow-xl shadow-emerald-500/20 flex flex-col items-center">
+                        <div className="text-[10px] font-black uppercase tracking-[0.2em] opacity-80 mb-1 text-center">Final Adjusted Balance</div>
+                        <div className="text-3xl font-black">{finalCC.toFixed(3)} BD</div>
+                     </div>
+                  )}
                </div>
            )}
         </div>
@@ -373,12 +410,18 @@ const App: React.FC = () => {
       rawData.forEach((row: any) => {
         const ref = getValueByFuzzyKey(row, "Reference", "Ref", "Project Ref");
         const plot = normalizePlot(getValueByFuzzyKey(row, "Plot Number", "Parcel", "Plot"));
+        const sourceStatus = getValueByFuzzyKey(row, "Status").trim();
         
-        // CRITERIA: A4 or A5 in Reference Number
-        if (ref.toUpperCase().includes('A4') || ref.toUpperCase().includes('A5')) {
+        // CRITERIA 1: A4 or A5 in Reference Number
+        // CRITERIA 2: Status must be in VALID_IMPORT_STATUSES list
+        const isA4A5 = ref.toUpperCase().includes('A4') || ref.toUpperCase().includes('A5');
+        const isValidStatus = VALID_IMPORT_STATUSES.includes(sourceStatus);
+
+        if (isA4A5 && isValidStatus) {
           stagedProjects.push({
             label: getValueByFuzzyKey(row, "Label", "Title", "Name") || 'Untitled Project',
-            status: getValueByFuzzyKey(row, "Status") || "Assign planning",
+            // MAP Source Status to Dashboard Status Category
+            status: mapSourceToUIStatus(sourceStatus),
             plotNumber: plot,
             referenceNumber: ref,
             zone: getValueByFuzzyKey(row, "Zone") || '',
@@ -390,7 +433,7 @@ const App: React.FC = () => {
             createdAt: new Date().toISOString()
           });
         } 
-        // INFRA CRITERIA: Has a Plot Number but no A4/A5 ref
+        // INFRA CRITERIA: Has a Plot Number but no A4/A5 ref (kept for global database seeding)
         else if (plot && plot !== '') {
           stagedInfra.push({
             plotNumber: plot,
