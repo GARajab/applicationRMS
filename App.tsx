@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+
+import React, { useState, useEffect, useMemo } from 'react';
 import { Icons } from './components/Icons';
 import * as XLSX from 'xlsx';
 import { RecordItem, InfraReferenceItem } from './types';
-import { getRecords, addRecord, deleteRecord, updateRecord, searchInfraReferences, saveInfraReferences, clearInfraReferences, getInfraStats, getPaidPlotNumbers } from './services/storageService';
-import { generateRecordReport } from './services/geminiService';
+import { getRecords, addRecord, deleteRecord, searchInfraReferences, saveInfraReferences, getPaidPlotNumbers } from './services/storageService';
 
 // --- Constants ---
 const STATUS_SEQUENCE = [
@@ -14,6 +14,8 @@ const STATUS_SEQUENCE = [
   "Suspended by EDD", "Work Design"
 ];
 
+const EWA_LOGO = "https://www.gdnonline.com/gdnimages/20230724/20230724111752EWALogo.png";
+
 // --- Helper Functions ---
 const parseDateSafe = (value: any): string => {
   if (!value) return '';
@@ -23,7 +25,6 @@ const parseDateSafe = (value: any): string => {
 
 const normalizePlot = (s: any) => String(s || '').trim();
 
-// Fuzzy matcher for Excel
 const getValueByFuzzyKey = (row: any, ...candidates: string[]): string => {
   const rowKeys = Object.keys(row);
   const normalizedKeys = rowKeys.reduce((acc, key) => {
@@ -41,49 +42,35 @@ const getValueByFuzzyKey = (row: any, ...candidates: string[]): string => {
   return '';
 };
 
-// --- Sub-Components ---
+// --- Styled Sub-Components ---
 
 const InfraBadge: React.FC<{ isPaid: boolean }> = ({ isPaid }) => {
   if (isPaid) {
     return (
-      <div className="relative group cursor-help">
-        <div className="absolute -inset-1 bg-gradient-to-r from-emerald-600 to-teal-600 rounded-lg blur opacity-25 group-hover:opacity-75 transition duration-200 animate-pulse"></div>
-        <div className="relative flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-500/50 rounded-lg text-emerald-700 dark:text-emerald-400 font-bold text-xs uppercase tracking-wider shadow-sm">
-           <Icons.Check className="w-3.5 h-3.5" />
+      <div className="relative group cursor-help flex items-center">
+        <div className="absolute -inset-1 bg-emerald-500 rounded-full blur opacity-20 group-hover:opacity-40 transition animate-pulse"></div>
+        <div className="relative flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 border border-emerald-500/30 rounded-full text-emerald-500 font-black text-[10px] uppercase tracking-tighter">
+           <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
            <span>Paid</span>
         </div>
       </div>
     );
   }
   return (
-    <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-500 dark:text-slate-400 font-bold text-xs uppercase tracking-wider opacity-80">
-        <Icons.Close className="w-3.5 h-3.5" />
+    <div className="flex items-center gap-1.5 px-3 py-1 bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 rounded-full text-slate-400 font-bold text-[10px] uppercase tracking-tighter opacity-60">
         <span>No Record</span>
     </div>
   );
 };
 
 const StatCard: React.FC<{ label: string; value: string | number; icon: any; color: string }> = ({ label, value, icon: Icon, color }) => (
-  <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-4 hover:shadow-md transition-shadow cursor-default group">
-    <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${color} bg-opacity-10 group-hover:scale-110 transition-transform`}>
-      <Icon className={`w-6 h-6 ${color.replace('bg-', 'text-')}`} />
+  <div className="bg-white dark:bg-slate-900/60 backdrop-blur-md p-6 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm flex items-center gap-5 hover:shadow-lg hover:-translate-y-1 transition-all duration-300">
+    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ${color} bg-opacity-10`}>
+      <Icon className={`w-7 h-7 ${color.replace('bg-', 'text-')}`} />
     </div>
     <div>
-      <p className="text-slate-500 dark:text-slate-400 text-xs font-bold uppercase tracking-wide">{label}</p>
-      <p className="text-xl font-bold text-slate-900 dark:text-white">{value}</p>
-    </div>
-  </div>
-);
-
-const LoadingScreen: React.FC = () => (
-  <div className="fixed inset-0 bg-slate-50 dark:bg-slate-950 z-[100] flex flex-col items-center justify-center animate-fade-in">
-    <div className="w-24 h-24 relative flex items-center justify-center">
-      <div className="absolute inset-0 bg-emerald-500 rounded-full blur-2xl opacity-20 animate-pulse"></div>
-      <Icons.Dashboard className="w-12 h-12 text-slate-900 dark:text-white animate-bounce-subtle z-10" />
-    </div>
-    <div className="mt-4 flex flex-col items-center">
-      <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Nexus Manager</h1>
-      <p className="text-slate-500 text-sm mt-1 animate-pulse">Loading System Resources...</p>
+      <p className="text-slate-400 text-xs font-black uppercase tracking-widest mb-1">{label}</p>
+      <p className="text-3xl font-black text-slate-900 dark:text-white leading-none">{value}</p>
     </div>
   </div>
 );
@@ -103,11 +90,9 @@ const DashboardView: React.FC<{
 
   const filteredData = useMemo(() => {
     let data = records;
-    // 1. Filter by Tab
     if (activeTab !== "All Projects") {
       data = data.filter(r => (r.status || '').toLowerCase() === activeTab.toLowerCase());
     }
-    // 2. Filter by Search
     if (searchTerm) {
       const lowerTerm = searchTerm.toLowerCase();
       data = data.filter(r => 
@@ -119,99 +104,92 @@ const DashboardView: React.FC<{
     return data;
   }, [records, activeTab, searchTerm]);
 
-  // Insights
-  const totalValue = filteredData.reduce((acc, r) => acc + (parseFloat(r.plannedTotalCost || '0') || 0), 0);
-  const urgentCount = filteredData.filter(r => r.urgent).length;
-  const paidCount = filteredData.filter(r => r.plotNumber && paidPlots.has(normalizePlot(r.plotNumber))).length;
+  const paidCount = records.filter(r => r.plotNumber && paidPlots.has(normalizePlot(r.plotNumber))).length;
 
   return (
-    <div className="space-y-6 animate-fade-in-up">
-      {/* Top Stats Row */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="Total Projects" value={filteredData.length} icon={Icons.Dashboard} color="bg-blue-500" />
-        <StatCard label="Estimated Value" value={`${totalValue.toLocaleString()} BD`} icon={Icons.CreditCard} color="bg-emerald-500" />
-        <StatCard label="Urgent Actions" value={urgentCount} icon={Icons.Alert} color="bg-rose-500" />
-        <StatCard label="Infra Paid" value={paidCount} icon={Icons.Check} color="bg-purple-500" />
+    <div className="space-y-8 animate-fade-in-up">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <StatCard label="Live Portfolio" value={records.length} icon={Icons.Dashboard} color="bg-indigo-500" />
+        <StatCard label="Total Payments (Infra)" value={paidCount} icon={Icons.Check} color="bg-emerald-500" />
       </div>
 
-      {/* Interactive Tabs */}
-      <div className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-950 pt-2 pb-4 -mx-4 px-4 md:px-0 md:mx-0 overflow-x-auto no-scrollbar">
-        <div className="flex gap-2">
-          {STATUS_SEQUENCE.map(status => (
-            <button
-              key={status}
-              onClick={() => setActiveTab(status)}
-              className={`whitespace-nowrap px-4 py-2 rounded-xl text-sm font-bold transition-all duration-200 border ${
-                activeTab === status 
-                  ? 'bg-slate-900 text-white border-slate-900 shadow-lg scale-105' 
-                  : 'bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
-              }`}
-            >
-              {status} <span className="ml-1 opacity-60 text-xs">({status === "All Projects" ? records.length : records.filter(r => (r.status||'').toLowerCase() === status.toLowerCase()).length})</span>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Action Bar */}
-      <div className="flex justify-between items-center">
-        <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-          {activeTab} <span className="text-slate-400 font-normal text-sm">/ {filteredData.length} Records</span>
-        </h2>
+      <div className="sticky top-0 z-20 -mx-8 px-8 py-4 bg-slate-50/80 dark:bg-black/80 backdrop-blur-xl border-b border-slate-200 dark:border-white/5 overflow-x-auto no-scrollbar">
         <div className="flex gap-3">
-          <div className="relative group">
-            <Icons.Search className="absolute left-3 top-2.5 text-slate-400 w-4 h-4" />
-            <input 
-              type="text" 
-              placeholder="Search..." 
-              value={searchTerm}
-              onChange={(e) => onSearch(e.target.value)}
-              className="pl-9 pr-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none w-64 transition-all shadow-sm"
-            />
-          </div>
-          <button onClick={onUpload} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-emerald-500/20 transition-transform active:scale-95 flex items-center gap-2">
-            <Icons.Plus className="w-4 h-4" /> New Record
-          </button>
+          {STATUS_SEQUENCE.map(status => {
+            const count = status === "All Projects" ? records.length : records.filter(r => (r.status||'').toLowerCase() === status.toLowerCase()).length;
+            return (
+              <button
+                key={status}
+                onClick={() => setActiveTab(status)}
+                className={`whitespace-nowrap px-6 py-2.5 rounded-2xl text-xs font-black transition-all duration-300 border ${
+                  activeTab === status 
+                    ? 'bg-slate-900 dark:bg-white text-white dark:text-black border-transparent shadow-xl scale-105' 
+                    : 'bg-white dark:bg-slate-900/50 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-white/5 hover:border-slate-300'
+                }`}
+              >
+                {status.toUpperCase()} <span className="ml-2 opacity-40 font-bold">{count}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {/* Main Data Table */}
-      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+      <div className="bg-white dark:bg-slate-900/40 rounded-[2.5rem] border border-slate-200 dark:border-white/5 shadow-2xl overflow-hidden">
+        <div className="p-8 flex flex-col md:flex-row justify-between items-center gap-6 border-b border-slate-100 dark:border-white/5">
+            <div>
+                <h2 className="text-2xl font-black text-slate-900 dark:text-white tracking-tighter">{activeTab}</h2>
+                <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-1">Found {filteredData.length} entries</p>
+            </div>
+            <div className="flex gap-4 w-full md:w-auto">
+                <div className="relative flex-1 md:w-80">
+                    <Icons.Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+                    <input 
+                      type="text" 
+                      placeholder="Search Label, Plot or Ref..." 
+                      value={searchTerm}
+                      onChange={(e) => onSearch(e.target.value)}
+                      className="w-full pl-11 pr-4 py-3 bg-slate-100 dark:bg-white/5 rounded-2xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                    />
+                </div>
+                <button onClick={onUpload} className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-sm font-black shadow-lg shadow-indigo-500/20 transition-all active:scale-95 flex items-center gap-2">
+                    <Icons.Plus className="w-4 h-4" /> IMPORT
+                </button>
+            </div>
+        </div>
+
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm whitespace-nowrap">
-            <thead className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800">
+            <thead className="bg-slate-50/50 dark:bg-white/5">
               <tr>
-                {["Project Label", "Status", "Zone", "Ref No", "Plot Number", "Job Type", "Created", "Infra Fee", "Actions"].map(h => (
-                  <th key={h} className="px-6 py-4 font-bold text-slate-600 dark:text-slate-400 uppercase text-xs tracking-wider">{h}</th>
+                {["Project", "Stage", "Zone", "Reference", "Plot", "Infra Hook", ""].map(h => (
+                  <th key={h} className="px-8 py-5 font-black text-slate-400 uppercase text-[10px] tracking-widest">{h}</th>
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+            <tbody className="divide-y divide-slate-100 dark:divide-white/5">
               {filteredData.length === 0 ? (
-                <tr><td colSpan={9} className="p-8 text-center text-slate-400 italic">No records found for this filter.</td></tr>
-              ) : filteredData.map((r, i) => (
-                <tr key={r.id} className="group hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
-                  <td className="px-6 py-4">
-                    <div className="font-bold text-slate-900 dark:text-white">{r.label}</div>
-                    <div className="text-xs text-slate-400">{r.subtype}</div>
+                <tr><td colSpan={7} className="p-12 text-center text-slate-400 italic font-bold">No active projects found in this stage.</td></tr>
+              ) : filteredData.map((r) => (
+                <tr key={r.id} className="group hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">
+                  <td className="px-8 py-6">
+                    <div className="font-black text-slate-900 dark:text-white text-base tracking-tight">{r.label}</div>
+                    <div className="text-[10px] text-slate-400 font-bold uppercase">{r.subtype || 'Project'}</div>
                   </td>
-                  <td className="px-6 py-4">
-                    <span className="px-2.5 py-1 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-bold border border-slate-200 dark:border-slate-700">
+                  <td className="px-8 py-6">
+                    <span className="px-3 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-[10px] font-black uppercase tracking-tighter border border-indigo-100 dark:border-indigo-500/20">
                       {r.status}
                     </span>
                   </td>
-                  <td className="px-6 py-4 text-slate-600 dark:text-slate-400 font-mono">{r.zone}</td>
-                  <td className="px-6 py-4 text-slate-600 dark:text-slate-400">{r.referenceNumber}</td>
-                  <td className="px-6 py-4 font-mono font-bold text-slate-800 dark:text-slate-200">{r.plotNumber || '-'}</td>
-                  <td className="px-6 py-4 text-slate-600 dark:text-slate-400">{r.jobType || '-'}</td>
-                  <td className="px-6 py-4 text-slate-600 dark:text-slate-400">{parseDateSafe(r.createdAt)}</td>
-                  <td className="px-6 py-4">
+                  <td className="px-8 py-6 text-slate-500 dark:text-slate-400 font-black">{r.zone}</td>
+                  <td className="px-8 py-6 text-slate-400 font-mono text-xs">{r.referenceNumber}</td>
+                  <td className="px-8 py-6 font-black text-slate-800 dark:text-slate-200">{r.plotNumber || '-'}</td>
+                  <td className="px-8 py-6">
                     <InfraBadge isPaid={!!(r.plotNumber && paidPlots.has(normalizePlot(r.plotNumber)))} />
                   </td>
-                  <td className="px-6 py-4 text-right">
-                    <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={() => onEdit(r)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"><Icons.Edit className="w-4 h-4" /></button>
-                      <button onClick={() => onDelete(r.id)} className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors"><Icons.Trash className="w-4 h-4" /></button>
+                  <td className="px-8 py-6 text-right">
+                    <div className="flex justify-end gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button onClick={() => onEdit(r)} className="p-2 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 rounded-xl"><Icons.Edit className="w-4 h-4" /></button>
+                      <button onClick={() => onDelete(r.id)} className="p-2 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-xl"><Icons.Trash className="w-4 h-4" /></button>
                     </div>
                   </td>
                 </tr>
@@ -237,132 +215,96 @@ const CalculatorView: React.FC = () => {
     setLoading(true);
     setSearchResult(null);
     const results = await searchInfraReferences(plotSearch);
-    // Exact match priority
     const match = results.find(r => normalizePlot(r.plotNumber) === normalizePlot(plotSearch)) || results[0];
     setSearchResult(match || null);
     setLoading(false);
   };
 
-  const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = async (evt) => {
-        const wb = XLSX.read(evt.target?.result, { type: 'binary' });
-        const jsonData = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
-        const dbItems = jsonData.map((row: any) => ({
-          plotNumber: getValueByFuzzyKey(row, "Parcel / Plot number", "Plot number", "Plot"),
-          initialPaymentDate: getValueByFuzzyKey(row, "Initial Payment Date", "1st Payment"),
-          secondPayment: getValueByFuzzyKey(row, "Second Payment", "2nd Payment"),
-          thirdPayment: getValueByFuzzyKey(row, "Third payment", "3rd Payment"),
-          ownerNameEn: getValueByFuzzyKey(row, "Owner English Name", "Owner Name"),
-          ewaFeeStatus: getValueByFuzzyKey(row, "EWA Fee Status", "Fee Status")
-        }));
-        await saveInfraReferences(dbItems);
-        alert(`Uploaded ${dbItems.length} records to database.`);
-      };
-      reader.readAsBinaryString(file);
-    }
-  };
-
-  const eddShare = parseFloat(fees) * ({'10':0.4, '12':0.375, '6.5':0.6923}[paymentType] || 0) || 0;
-  const finalCC = Math.max(0, (parseFloat(ccRef) || 0) - eddShare);
-  
-  // Hooking Logic: Has Actual Payments?
   const hasPayments = searchResult && (
      (searchResult.initialPaymentDate && searchResult.initialPaymentDate.trim() !== '') ||
      (searchResult.secondPayment && searchResult.secondPayment.trim() !== '') ||
      (searchResult.thirdPayment && searchResult.thirdPayment.trim() !== '')
   );
 
+  const eddShare = parseFloat(fees) * ({'10':0.4, '12':0.375, '6.5':0.6923}[paymentType] || 0) || 0;
+  const finalCC = Math.max(0, (parseFloat(ccRef) || 0) - eddShare);
+
   return (
-    <div className="flex flex-col lg:flex-row gap-8 h-[calc(100vh-8rem)] animate-fade-in-up">
-      {/* Left: Input & Tools */}
+    <div className="flex flex-col lg:flex-row gap-8 min-h-[70vh] animate-fade-in-up">
       <div className="w-full lg:w-1/3 flex flex-col gap-6">
-        {/* Search Card */}
-        <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-lg shadow-slate-200/50 dark:shadow-none">
-          <h2 className="text-xl font-bold mb-4 text-slate-900 dark:text-white flex items-center gap-2"><Icons.Search className="w-5 h-5 text-blue-500" /> Database Search</h2>
-          <div className="relative">
+        <div className="bg-white dark:bg-slate-900 p-8 rounded-[2rem] border border-slate-200 dark:border-white/5 shadow-xl">
+          <h2 className="text-lg font-black mb-6 text-slate-900 dark:text-white flex items-center gap-3 uppercase tracking-tighter">
+            <Icons.Search className="w-5 h-5 text-indigo-500" /> Database Search
+          </h2>
+          <div className="relative group">
             <input 
               type="text" 
-              placeholder="Enter Plot Number..." 
+              placeholder="PLOT NUMBER..." 
               value={plotSearch}
               onChange={e => setPlotSearch(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && handleSearch()}
-              className="w-full pl-4 pr-12 py-3 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl font-bold text-lg outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full pl-6 pr-14 py-4 bg-slate-50 dark:bg-black border border-slate-200 dark:border-white/10 rounded-2xl font-black text-xl outline-none focus:ring-4 focus:ring-indigo-500/20 transition-all"
             />
-            <button onClick={handleSearch} className="absolute right-2 top-2 p-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+            <button onClick={handleSearch} className="absolute right-2 top-2 bottom-2 px-4 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors">
               {loading ? <Icons.Spinner className="w-5 h-5 animate-spin" /> : <Icons.Right className="w-5 h-5" />}
             </button>
           </div>
-          <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 flex justify-center">
-             <label className="text-xs font-bold text-blue-600 hover:text-blue-700 cursor-pointer flex items-center gap-1">
-                <Icons.Upload className="w-3 h-3" /> Update Database (Excel)
-                <input type="file" className="hidden" onChange={handleUpload} />
-             </label>
-          </div>
         </div>
 
-        {/* Calculator Card */}
-        <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm">
-           <h2 className="text-lg font-bold mb-4 text-slate-900 dark:text-white flex items-center gap-2"><Icons.Calculator className="w-5 h-5 text-emerald-500" /> Cost Recovery</h2>
-           <div className="flex gap-2 mb-4">
+        <div className="bg-white dark:bg-slate-900 p-8 rounded-[2rem] border border-slate-200 dark:border-white/5 shadow-xl">
+           <h2 className="text-lg font-black mb-6 text-slate-900 dark:text-white flex items-center gap-3 uppercase tracking-tighter">
+             <Icons.Calculator className="w-5 h-5 text-emerald-500" /> Cost Recovery
+           </h2>
+           <div className="flex gap-2 mb-6 p-1 bg-slate-100 dark:bg-black rounded-xl">
               {['10', '12', '6.5'].map(t => (
-                  <button key={t} onClick={() => setPaymentType(t as any)} className={`flex-1 py-2 rounded-lg font-bold text-sm border ${paymentType === t ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>{t}</button>
+                  <button key={t} onClick={() => setPaymentType(t as any)} className={`flex-1 py-2 rounded-lg font-black text-[10px] transition-all ${paymentType === t ? 'bg-white dark:bg-slate-800 text-emerald-600 shadow-sm' : 'text-slate-400'}`}>{t} BD</button>
               ))}
            </div>
-           <div className="space-y-3">
-              <input type="number" placeholder="Fees (BD)" value={fees} onChange={e => setFees(e.target.value)} className="w-full p-3 rounded-xl border border-slate-200 bg-slate-50 text-sm font-medium outline-none focus:border-emerald-500" />
-              <input type="number" placeholder="13/2006 CC (BD)" value={ccRef} onChange={e => setCcRef(e.target.value)} className="w-full p-3 rounded-xl border border-slate-200 bg-slate-50 text-sm font-medium outline-none focus:border-emerald-500" />
+           <div className="space-y-4">
+              <input type="number" placeholder="Fees (BD)" value={fees} onChange={e => setFees(e.target.value)} className="w-full p-4 rounded-2xl border border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-black font-bold outline-none focus:ring-2 focus:ring-emerald-500" />
+              <input type="number" placeholder="13/2006 CC (BD)" value={ccRef} onChange={e => setCcRef(e.target.value)} className="w-full p-4 rounded-2xl border border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-black font-bold outline-none focus:ring-2 focus:ring-emerald-500" />
            </div>
            {finalCC > 0 && (
-               <div className="mt-4 p-4 bg-emerald-50 text-emerald-800 rounded-xl border border-emerald-100 animate-scale-in">
-                  <div className="text-xs font-bold uppercase tracking-wide opacity-70">Final Amount</div>
-                  <div className="text-2xl font-bold">{finalCC.toFixed(3)} BD</div>
+               <div className="mt-8 p-6 bg-emerald-500/10 text-emerald-500 rounded-3xl border border-emerald-500/20 animate-scale-in flex flex-col items-center">
+                  <div className="text-[10px] font-black uppercase tracking-[0.2em] opacity-60 mb-1 text-center">Final Adjusted Amount</div>
+                  <div className="text-4xl font-black">{finalCC.toFixed(3)} BD</div>
                </div>
            )}
         </div>
       </div>
 
-      {/* Right: Hooking Result Display */}
       <div className="w-full lg:w-2/3">
         {searchResult ? (
-          <div className={`h-full rounded-3xl p-8 border-2 relative overflow-hidden transition-all duration-500 ${hasPayments ? 'bg-emerald-50 dark:bg-emerald-950/20 border-emerald-500' : 'bg-slate-50 dark:bg-slate-900 border-red-400'}`}>
-            
-            {/* Background Decorations */}
-            <div className={`absolute -right-20 -top-20 w-64 h-64 rounded-full blur-3xl opacity-20 ${hasPayments ? 'bg-emerald-500' : 'bg-red-500'}`}></div>
-
-            <div className="relative z-10 flex flex-col h-full">
-              {/* Header */}
-              <div className="flex justify-between items-start mb-8">
+          <div className={`h-full rounded-[3rem] p-12 border-4 transition-all duration-700 relative overflow-hidden flex flex-col ${hasPayments ? 'bg-emerald-50 dark:bg-emerald-950/20 border-emerald-500 shadow-2xl shadow-emerald-500/10' : 'bg-slate-50 dark:bg-slate-900 border-rose-500 shadow-2xl shadow-rose-500/10'}`}>
+            <div className={`absolute -right-32 -top-32 w-96 h-96 rounded-full blur-[100px] opacity-30 ${hasPayments ? 'bg-emerald-400' : 'bg-rose-400'}`}></div>
+            <div className="relative z-10">
+              <div className="flex justify-between items-start mb-12">
                  <div>
-                    <h3 className="text-sm font-bold uppercase tracking-wider opacity-60">Plot Status Report</h3>
-                    <h1 className="text-4xl font-black text-slate-900 dark:text-white mt-1">{searchResult.plotNumber}</h1>
-                    <p className="text-lg font-medium opacity-80 mt-2">{searchResult.ownerNameEn || 'Unknown Owner'}</p>
+                    <h3 className="text-xs font-black uppercase tracking-[0.3em] opacity-40 mb-2">Internal Status Report</h3>
+                    <h1 className="text-6xl font-black text-slate-900 dark:text-white tracking-tighter leading-none">{searchResult.plotNumber}</h1>
+                    <p className="text-2xl font-bold opacity-70 mt-4 tracking-tight">{searchResult.ownerNameEn || 'Private Entity'}</p>
                  </div>
-                 <div className={`w-20 h-20 rounded-2xl flex items-center justify-center shadow-xl ${hasPayments ? 'bg-emerald-500 text-white' : 'bg-red-500 text-white'} animate-bounce-subtle`}>
-                    {hasPayments ? <Icons.Check className="w-10 h-10" /> : <Icons.Close className="w-10 h-10" />}
+                 <div className={`w-28 h-28 rounded-[2rem] flex flex-col items-center justify-center shadow-2xl animate-bounce-subtle ${hasPayments ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white'}`}>
+                    {hasPayments ? <Icons.Check className="w-12 h-12 mb-1" /> : <Icons.Close className="w-12 h-12 mb-1" />}
+                    <span className="text-[10px] font-black">{hasPayments ? 'VERIFIED' : 'PENDING'}</span>
                  </div>
               </div>
-
-              {/* Status Hook */}
-              <div className={`p-6 rounded-2xl border-2 mb-8 text-center ${hasPayments ? 'bg-white border-emerald-100 shadow-emerald-200/50 shadow-lg' : 'bg-white border-red-100 shadow-red-200/50 shadow-lg'}`}>
-                  <span className={`text-2xl font-black uppercase tracking-tight ${hasPayments ? 'text-emerald-600' : 'text-red-600'}`}>
-                    {hasPayments ? 'INFRASTRUCTURE FEES PAID' : 'NO PAYMENT RECORDS FOUND'}
+              <div className={`p-10 rounded-[2.5rem] border-2 text-center mb-12 transform hover:scale-105 transition-all duration-500 ${hasPayments ? 'bg-white/80 dark:bg-black/40 border-emerald-100 dark:border-emerald-500/20 shadow-2xl shadow-emerald-200' : 'bg-white/80 dark:bg-black/40 border-rose-100 dark:border-rose-500/20 shadow-2xl shadow-rose-200'}`}>
+                  <span className={`text-4xl font-black uppercase tracking-tighter ${hasPayments ? 'text-emerald-600' : 'text-rose-600'}`}>
+                    {hasPayments ? 'Infrastructure Fees Cleared' : 'Incomplete Payment Profile'}
                   </span>
+                  <p className="text-slate-400 text-xs font-bold mt-2 uppercase tracking-widest">Database Sync ID: {searchResult.id.split('-')[0]}</p>
               </div>
-
-              {/* Data Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {['Initial Payment', 'Second Payment', 'Third Payment'].map((label, i) => {
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {['First Installment', 'Second Installment', 'Final Settlement'].map((label, i) => {
                       const keys = ['initialPaymentDate', 'secondPayment', 'thirdPayment'];
                       const val = (searchResult as any)[keys[i]];
-                      const hasVal = val && val.trim() !== '';
+                      const isFound = val && val.trim() !== '';
                       return (
-                        <div key={label} className={`p-4 rounded-xl border bg-white/80 backdrop-blur ${hasVal ? 'border-emerald-200' : 'border-slate-200 opacity-70'}`}>
-                           <div className="text-xs font-bold uppercase tracking-wide text-slate-400 mb-1">{label}</div>
-                           <div className={`font-bold text-lg ${hasVal ? 'text-emerald-700' : 'text-slate-400 italic'}`}>
-                             {hasVal ? val : 'Not Recorded'}
+                        <div key={label} className={`p-6 rounded-3xl border bg-white/50 dark:bg-black/20 backdrop-blur-md transition-all ${isFound ? 'border-emerald-200 dark:border-emerald-500/30' : 'border-slate-200 dark:border-white/5 opacity-50'}`}>
+                           <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">{label}</div>
+                           <div className={`font-black text-xl ${isFound ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-300 italic'}`}>
+                             {isFound ? val : 'NOT RECORDED'}
                            </div>
                         </div>
                       );
@@ -371,11 +313,14 @@ const CalculatorView: React.FC = () => {
             </div>
           </div>
         ) : (
-          <div className="h-full rounded-3xl border-2 border-dashed border-slate-200 dark:border-slate-800 flex flex-col items-center justify-center text-slate-400 gap-4">
-             <div className="w-20 h-20 rounded-full bg-slate-100 dark:bg-slate-900 flex items-center justify-center">
-                <Icons.Search className="w-8 h-8 opacity-50" />
+          <div className="h-full rounded-[3rem] border-4 border-dashed border-slate-200 dark:border-white/10 flex flex-col items-center justify-center text-slate-300 dark:text-slate-700 gap-6 p-12">
+             <div className="w-32 h-32 rounded-full bg-slate-100 dark:bg-white/5 flex items-center justify-center">
+                <Icons.Search className="w-12 h-12 opacity-30" />
              </div>
-             <p className="font-bold">Enter a plot number to verify fees.</p>
+             <div className="text-center">
+                <p className="text-2xl font-black tracking-tight uppercase">Ready for validation</p>
+                <p className="text-sm font-bold opacity-60">Enter a plot ID to hook into the financial database.</p>
+             </div>
           </div>
         )}
       </div>
@@ -383,187 +328,146 @@ const CalculatorView: React.FC = () => {
   );
 };
 
-const ChatView: React.FC<{ records: RecordItem[] }> = ({ records }) => {
-    // Same chat implementation but with updated styling containers
-    return (
-        <div className="flex items-center justify-center h-[60vh] text-slate-400">
-           <p>Chat Module Placeholder (Keep existing logic here if needed)</p>
-        </div>
-    );
-};
-
-// --- Main App Component ---
-
 const App: React.FC = () => {
-  const [currentView, setCurrentView] = useState<'dashboard' | 'calculator' | 'chat'>('dashboard');
+  const [currentView, setCurrentView] = useState<'dashboard' | 'calculator'>('dashboard');
   const [records, setRecords] = useState<RecordItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [showUpload, setShowUpload] = useState(false);
-  const [editingRecord, setEditingRecord] = useState<RecordItem | null>(null);
   const [paidPlots, setPaidPlots] = useState<Set<string>>(new Set());
 
-  // Initial Load
-  const loadRecords = async () => {
+  const loadData = async () => {
     setLoading(true);
     const data = await getRecords();
     setRecords(data);
     const plots = data.map(r => normalizePlot(r.plotNumber)).filter(Boolean);
     if (plots.length > 0) {
-      const paid = await getPaidPlotNumbers(plots);
-      setPaidPlots(paid);
+      setPaidPlots(await getPaidPlotNumbers(plots));
     }
     setLoading(false);
   };
 
-  useEffect(() => { loadRecords(); }, []);
+  useEffect(() => { loadData(); }, []);
 
-  // FIXED: handleExcelUpload now maps all required RecordItem fields correctly
   const handleExcelUpload = async (file: File) => {
     const reader = new FileReader();
     reader.onload = async (e) => {
       const wb = XLSX.read(e.target?.result, { type: 'binary' });
       const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
       
-      const mapped: RecordItem[] = data.map((row: any) => ({
-             id: '', // Will be handled by addRecord logic or backend
-             label: getValueByFuzzyKey(row, "Label", "Title") || 'Untitled',
+      // EXTREMELY SELECTIVE MAPPING: Only mapping core columns that are confirmed 
+      // in the basic Supabase schema to avoid PGRST204 errors.
+      const mapped: any[] = data.map((row: any) => ({
+             label: getValueByFuzzyKey(row, "Label", "Title") || 'Untitled Project',
              status: getValueByFuzzyKey(row, "Status") || "Assign planning",
-             plotNumber: getValueByFuzzyKey(row, "Plot Number", "Parcel"),
-             referenceNumber: getValueByFuzzyKey(row, "Reference") || '-',
+             plotNumber: normalizePlot(getValueByFuzzyKey(row, "Plot Number", "Parcel")),
+             referenceNumber: getValueByFuzzyKey(row, "Reference", "Ref") || 'N/A',
              zone: getValueByFuzzyKey(row, "Zone") || '',
-             // Mandatory fields with defaults (Fixing TS2345)
              block: getValueByFuzzyKey(row, "Block") || '',
              scheduleStartDate: parseDateSafe(getValueByFuzzyKey(row, "Schedule Start", "Start Date")) || new Date().toISOString(),
              wayleaveNumber: getValueByFuzzyKey(row, "Wayleave") || '',
              accountNumber: getValueByFuzzyKey(row, "Account") || '',
              requireUSP: false,
              createdAt: new Date().toISOString(),
-             // Map other optional fields to ensure data isn't lost
-             subtype: getValueByFuzzyKey(row, "Subtype"),
-             type: getValueByFuzzyKey(row, "Type"),
-             phase: getValueByFuzzyKey(row, "Phase"),
-             scheduleEndDate: parseDateSafe(getValueByFuzzyKey(row, "Schedule End", "End Date")),
-             userConnected: getValueByFuzzyKey(row, "User Connected"),
-             createdBy: getValueByFuzzyKey(row, "Created By"),
-             capitalContribution: getValueByFuzzyKey(row, "Capital Contribution"),
-             nominatedContractor: getValueByFuzzyKey(row, "Nominated Contractor"),
-             urgent: String(getValueByFuzzyKey(row, "Urgent")).toLowerCase() === 'yes',
-             lastShutdown: getValueByFuzzyKey(row, "Last Shutdown"),
-             planningEngineer: getValueByFuzzyKey(row, "Planning Engineer"),
-             constructionEngineer: getValueByFuzzyKey(row, "Construction Engineer"),
-             supervisor: getValueByFuzzyKey(row, "Supervisor"),
-             plannedTotalCost: getValueByFuzzyKey(row, "Planned Total Cost"),
-             plannedMaterialCost: getValueByFuzzyKey(row, "Planned Material Cost"),
-             plannedServiceCost: getValueByFuzzyKey(row, "Planned Service Cost"),
-             paymentDate: parseDateSafe(getValueByFuzzyKey(row, "Payment Date")),
-             totalPower: getValueByFuzzyKey(row, "Total Power"),
-             contractorAssignDate: parseDateSafe(getValueByFuzzyKey(row, "Contractor Assign Date")),
-             workOrder: getValueByFuzzyKey(row, "Work Order"),
-             customerCpr: getValueByFuzzyKey(row, "Customer CPR"),
-             jobType: getValueByFuzzyKey(row, "Job Type"),
-             governorate: getValueByFuzzyKey(row, "Governorate"),
-             nasCode: getValueByFuzzyKey(row, "NAS Code"),
-             description: getValueByFuzzyKey(row, "Description"),
-             mtcContractor: getValueByFuzzyKey(row, "MTC Contractor"),
-             workflowEntryDate: parseDateSafe(getValueByFuzzyKey(row, "Workflow Entry Date")),
-             contractorPaymentDate: parseDateSafe(getValueByFuzzyKey(row, "Contractor Payment Date")),
-             installationContractor: getValueByFuzzyKey(row, "Installation Contractor"),
+             // Adding optional fields only if they have values to avoid column-not-found issues
+             subtype: getValueByFuzzyKey(row, "Subtype") || undefined,
+             jobType: getValueByFuzzyKey(row, "Job Type") || undefined
       }));
       
       let addedCount = 0;
       for(const item of mapped) {
-          if (await addRecord(item)) addedCount++;
+          // addRecord now uses prunePayload internally to protect against schema mismatch
+          const result = await addRecord(item as RecordItem);
+          if (result) addedCount++;
       }
-      loadRecords();
+      loadData();
       setShowUpload(false);
       alert(`Imported ${addedCount} records successfully.`);
     };
     reader.readAsBinaryString(file);
   };
 
-  if (loading) return <LoadingScreen />;
+  if (loading) return (
+    <div className="fixed inset-0 bg-slate-900 flex items-center justify-center">
+      <div className="text-center">
+        <Icons.Spinner className="w-12 h-12 text-indigo-500 animate-spin mx-auto mb-4" />
+        <p className="text-slate-400 font-black text-xs uppercase tracking-widest">Rajab A4/A5 Booting...</p>
+      </div>
+    </div>
+  );
 
   return (
-    <div className="min-h-screen bg-slate-100 dark:bg-black font-sans text-slate-900 dark:text-slate-100 flex overflow-hidden">
-      
-      {/* Sidebar - Neo Glass */}
-      <aside className="w-20 lg:w-64 bg-slate-900 text-white flex flex-col fixed h-full z-50 transition-all duration-300 shadow-2xl">
-        <div className="p-6 flex items-center justify-center lg:justify-start gap-3">
-            <div className="w-10 h-10 bg-gradient-to-tr from-emerald-500 to-teal-500 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-500/20">
-                <Icons.Dashboard className="w-6 h-6 text-white" />
+    <div className="min-h-screen bg-slate-50 dark:bg-black font-sans text-slate-900 dark:text-slate-100 flex overflow-hidden">
+      <aside className="w-24 lg:w-72 bg-slate-900/95 dark:bg-black/40 backdrop-blur-2xl text-white flex flex-col fixed h-full z-50 border-r border-white/5">
+        <div className="p-10 flex flex-col items-center lg:items-start gap-4">
+            <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center shadow-2xl overflow-hidden p-2">
+                <img src={EWA_LOGO} alt="EWA Logo" className="w-full h-full object-contain" />
             </div>
-            <h1 className="hidden lg:block font-black text-xl tracking-tighter">NEXUS</h1>
+            <div className="hidden lg:block">
+                <h1 className="font-black text-xl tracking-tighter leading-none uppercase">Rajab A4/A5</h1>
+                <p className="text-[10px] font-black text-indigo-400 tracking-[0.3em]">NEXUS SYSTEM</p>
+            </div>
         </div>
         
-        <nav className="flex-1 px-4 py-8 space-y-3">
+        <nav className="flex-1 px-6 space-y-4">
           {[
-            { id: 'dashboard', icon: Icons.Dashboard, label: 'Overview' },
-            { id: 'calculator', icon: Icons.Calculator, label: 'Cost Recovery' },
-            { id: 'chat', icon: Icons.ChatBubble, label: 'AI Assistant' }
+            { id: 'dashboard', icon: Icons.Dashboard, label: 'Control Hub' },
+            { id: 'calculator', icon: Icons.Calculator, label: 'Audit Engine' }
           ].map((item) => (
             <button 
               key={item.id}
               onClick={() => setCurrentView(item.id as any)}
-              className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl transition-all duration-300 group ${
+              className={`w-full flex items-center gap-5 px-6 py-4 rounded-2xl transition-all duration-500 group ${
                 currentView === item.id 
-                  ? 'bg-white/10 text-white shadow-inner backdrop-blur-sm border border-white/5' 
-                  : 'text-slate-400 hover:bg-white/5 hover:text-white'
+                  ? 'bg-white/10 text-white border border-white/10 shadow-2xl' 
+                  : 'text-slate-500 hover:text-white'
               }`}
             >
-              <item.icon className={`w-6 h-6 ${currentView === item.id ? 'text-emerald-400' : 'group-hover:text-emerald-400 transition-colors'}`} />
-              <span className="hidden lg:block font-bold text-sm tracking-wide">{item.label}</span>
-              {currentView === item.id && <div className="hidden lg:block ml-auto w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]"></div>}
+              <item.icon className={`w-6 h-6 transition-colors ${currentView === item.id ? 'text-indigo-400' : 'group-hover:text-indigo-400'}`} />
+              <span className="hidden lg:block font-black text-xs uppercase tracking-widest">{item.label}</span>
             </button>
           ))}
         </nav>
 
-        <div className="p-4 border-t border-white/10">
-            <div className="hidden lg:flex items-center gap-3 p-3 rounded-xl bg-white/5 border border-white/5">
-                <div className="w-8 h-8 rounded-full bg-indigo-500 flex items-center justify-center font-bold text-xs">AD</div>
-                <div className="text-xs">
-                    <p className="font-bold">Admin User</p>
-                    <p className="text-slate-500">View Profile</p>
+        <div className="p-8">
+            <div className="hidden lg:block p-6 rounded-3xl bg-indigo-500/10 border border-indigo-500/20 text-center">
+                <p className="text-[10px] font-black uppercase text-indigo-400 tracking-[0.2em] mb-2">Live Status</p>
+                <div className="flex items-center justify-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+                    <span className="font-bold text-xs">CONNECTED</span>
                 </div>
             </div>
         </div>
       </aside>
 
-      {/* Main Content */}
-      <main className="flex-1 ml-20 lg:ml-64 p-4 lg:p-8 overflow-y-auto h-screen relative">
-        {/* Background Ambient Glow */}
-        <div className="fixed top-0 left-0 w-full h-96 bg-gradient-to-b from-blue-500/5 to-transparent pointer-events-none"></div>
-
-        <div className="max-w-7xl mx-auto relative z-10">
-           {currentView === 'dashboard' && (
+      <main className="flex-1 ml-24 lg:ml-72 p-12 overflow-y-auto h-screen custom-scrollbar">
+        <div className="max-w-7xl mx-auto">
+           {currentView === 'dashboard' ? (
              <DashboardView 
                records={records} 
                paidPlots={paidPlots} 
                searchTerm={searchTerm} 
                onSearch={setSearchTerm} 
                onUpload={() => setShowUpload(true)}
-               onEdit={setEditingRecord}
-               onDelete={(id) => { if(confirm('Delete?')) deleteRecord(id).then(loadRecords); }}
+               onEdit={() => {}}
+               onDelete={(id) => { if(confirm('Delete?')) deleteRecord(id).then(loadData); }}
              />
-           )}
-           {currentView === 'calculator' && <CalculatorView />}
-           {currentView === 'chat' && <ChatView records={records} />}
+           ) : <CalculatorView />}
         </div>
 
-        {/* Upload Modal */}
         {showUpload && (
             <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4 animate-fade-in">
-                <div className="bg-white dark:bg-slate-900 rounded-3xl p-8 max-w-md w-full shadow-2xl animate-scale-in">
+                <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] p-10 max-w-md w-full shadow-2xl animate-scale-in border border-white/10">
                     <div className="text-center">
-                        <div className="w-16 h-16 bg-blue-50 dark:bg-blue-900/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                            <Icons.Upload className="w-8 h-8 text-blue-600" />
+                        <div className="w-20 h-20 bg-indigo-50 dark:bg-indigo-900/20 rounded-3xl flex items-center justify-center mx-auto mb-6">
+                            <Icons.Excel className="w-10 h-10 text-indigo-600" />
                         </div>
-                        <h3 className="text-xl font-bold mb-2 text-slate-900 dark:text-white">Import Records</h3>
-                        <p className="text-sm text-slate-500 mb-6">Select an Excel file (.xlsx) to bulk import projects.</p>
+                        <h3 className="text-2xl font-black mb-2 text-slate-900 dark:text-white tracking-tighter uppercase">Seed Database</h3>
+                        <p className="text-sm text-slate-500 mb-8 font-medium">Inject project records from your local Excel file.</p>
                         <input type="file" id="upload-input" className="hidden" accept=".xlsx" onChange={(e) => e.target.files?.[0] && handleExcelUpload(e.target.files[0])} />
-                        <div className="flex gap-3">
-                            <label htmlFor="upload-input" className="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold cursor-pointer hover:bg-blue-700 transition-colors">Select File</label>
-                            <button onClick={() => setShowUpload(false)} className="px-6 py-3 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl font-bold hover:bg-slate-200">Cancel</button>
+                        <div className="flex flex-col gap-3">
+                            <label htmlFor="upload-input" className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black cursor-pointer hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-600/20 uppercase text-xs tracking-widest">Select Dataset</label>
+                            <button onClick={() => setShowUpload(false)} className="w-full py-4 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-2xl font-black hover:bg-slate-200 transition-all uppercase text-xs tracking-widest">Dismiss</button>
                         </div>
                     </div>
                 </div>

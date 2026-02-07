@@ -7,6 +7,22 @@ const normalizePlot = (p: string | number | null | undefined): string => {
   return String(p).trim();
 };
 
+/**
+ * Prunes keys from an object that are undefined, null, or empty strings
+ * This prevents Supabase from trying to insert into columns that might not exist 
+ * in the schema but are present in the TypeScript interface.
+ */
+const prunePayload = (obj: any) => {
+  const pruned: any = {};
+  Object.keys(obj).forEach(key => {
+    const val = obj[key];
+    if (val !== undefined && val !== null && val !== '') {
+      pruned[key] = val;
+    }
+  });
+  return pruned;
+};
+
 export const getRecords = async (): Promise<RecordItem[]> => {
   const { data, error } = await supabase
     .from('records')
@@ -20,7 +36,6 @@ export const getRecords = async (): Promise<RecordItem[]> => {
   
   return (data || []).map((item: any) => ({
     ...item,
-    // Core fields
     id: item.id,
     label: item.label || 'Untitled',
     status: item.status || 'Unknown',
@@ -30,55 +45,19 @@ export const getRecords = async (): Promise<RecordItem[]> => {
     wayleaveNumber: item.wayleaveNumber || item.wayleave_number || '',
     accountNumber: item.accountNumber || item.account_number || '',
     referenceNumber: item.referenceNumber || item.reference_number || '',
-    
-    // New Dashboard Fields
-    subtype: item.subtype,
-    type: item.type,
-    phase: item.phase,
-    scheduleEndDate: item.scheduleEndDate || item.schedule_end_date,
-    userConnected: item.userConnected || item.user_connected,
-    createdBy: item.createdBy || item.created_by,
-    capitalContribution: item.capitalContribution || item.capital_contribution,
-    nominatedContractor: item.nominatedContractor || item.nominated_contractor,
-    urgent: item.urgent,
-    lastShutdown: item.lastShutdown || item.last_shutdown,
-    planningEngineer: item.planningEngineer || item.planning_engineer,
-    constructionEngineer: item.constructionEngineer || item.construction_engineer,
-    supervisor: item.supervisor,
-    plannedTotalCost: item.plannedTotalCost || item.planned_total_cost,
-    plannedMaterialCost: item.plannedMaterialCost || item.planned_material_cost,
-    plannedServiceCost: item.plannedServiceCost || item.planned_service_cost,
-    paymentDate: item.paymentDate || item.payment_date,
-    totalPower: item.totalPower || item.total_power,
-    contractorAssignDate: item.contractorAssignDate || item.contractor_assign_date,
-    workOrder: item.workOrder || item.work_order,
-    plotNumber: normalizePlot(item.plotNumber || item.plot_number), // Normalize here
-    customerCpr: item.customerCpr || item.customer_cpr,
-    jobType: item.jobType || item.job_type,
-    governorate: item.governorate,
-    nasCode: item.nasCode || item.nas_code,
-    description: item.description,
-    mtcContractor: item.mtcContractor || item.mtc_contractor,
-    workflowEntryDate: item.workflowEntryDate || item.workflow_entry_date,
-    contractorPaymentDate: item.contractorPaymentDate || item.contractor_payment_date,
-    installationContractor: item.installationContractor || item.installation_contractor,
-
-    // Existing / internal
+    plotNumber: normalizePlot(item.plotNumber || item.plot_number),
     requireUSP: item.requireUSP ?? item.require_usp ?? false,
-    sentToUSPDate: item.sentToUSPDate || item.sent_to_usp_date,
-    justification: item.justification || '',
-    
-    // Extra fields
-    applicationNumber: item.applicationNumber || item.application_number,
-    momaaLoad: item.momaaLoad || item.momaa_load,
+    createdAt: item.createdAt || item.created_at,
   }));
 };
 
 export const addRecord = async (record: RecordItem): Promise<RecordItem | null> => {
-  const payload: any = { ...record };
-  if (!payload.id || payload.id === '') {
-    delete payload.id;
-  }
+  // Prune the payload to only send fields that actually have values
+  const payload = prunePayload({ ...record });
+  
+  // Ensure ID is not sent for new records if it's empty
+  if (!payload.id) delete payload.id;
+  
   // Normalize plot on save
   if (payload.plotNumber) payload.plotNumber = normalizePlot(payload.plotNumber);
 
@@ -96,7 +75,8 @@ export const addRecord = async (record: RecordItem): Promise<RecordItem | null> 
 };
 
 export const updateRecord = async (id: string, updates: Partial<RecordItem>): Promise<boolean> => {
-  const payload = { ...updates };
+  const payload = prunePayload({ ...updates });
+  
   // Normalize plot on update
   if (payload.plotNumber) payload.plotNumber = normalizePlot(payload.plotNumber);
 
@@ -127,9 +107,7 @@ export const deleteRecord = async (id: string): Promise<boolean> => {
 
 // --- Infra References Methods ---
 
-// RE-ENGINEERED: Checks for ACTUAL PAYMENT DATES in addition to plot existence
 export const getPaidPlotNumbers = async (plotNumbers: string[]): Promise<Set<string>> => {
-  // Normalize inputs
   const validPlots = [...new Set(plotNumbers.map(p => normalizePlot(p)).filter(p => p !== ''))];
   if (validPlots.length === 0) return new Set();
 
@@ -139,7 +117,6 @@ export const getPaidPlotNumbers = async (plotNumbers: string[]): Promise<Set<str
   for (let i = 0; i < validPlots.length; i += chunkSize) {
     const chunk = validPlots.slice(i, i + chunkSize);
     
-    // Select payment fields to check if they have values
     const { data, error } = await supabase
       .from('infra_references')
       .select('plotNumber, initialPaymentDate, secondPayment, thirdPayment')
@@ -152,7 +129,6 @@ export const getPaidPlotNumbers = async (plotNumbers: string[]): Promise<Set<str
 
     if (data) {
       data.forEach((row: any) => {
-        // A plot is "YES" (Red) only if it has at least one payment date recorded
         const hasPaymentData = 
           (row.initialPaymentDate && String(row.initialPaymentDate).trim() !== '') || 
           (row.secondPayment && String(row.secondPayment).trim() !== '') || 
@@ -172,7 +148,6 @@ export const searchInfraReferences = async (plotNumber: string): Promise<InfraRe
   if (!plotNumber) return [];
   const term = normalizePlot(plotNumber);
 
-  // Search in database directly using ILIKE
   const { data, error } = await supabase
     .from('infra_references')
     .select('*')
@@ -186,29 +161,14 @@ export const searchInfraReferences = async (plotNumber: string): Promise<InfraRe
   return data || [];
 };
 
-export const getInfraStats = async (): Promise<{ count: number }> => {
-  const { count, error } = await supabase
-    .from('infra_references')
-    .select('*', { count: 'exact', head: true });
-    
-  if (error) return { count: 0 };
-  return { count: count || 0 };
-};
-
-const CHUNK_SIZE = 1000;
-
 export const saveInfraReferences = async (items: Partial<InfraReferenceItem>[]): Promise<boolean> => {
   if (items.length === 0) return true;
-
-  // Process in chunks
+  const CHUNK_SIZE = 1000;
   let hasError = false;
   for (let i = 0; i < items.length; i += CHUNK_SIZE) {
     const chunk = items.slice(i, i + CHUNK_SIZE);
-    
-    // Clean data before insert
     const cleanChunk = chunk.map(item => {
-       const clean: any = { ...item };
-       // CRITICAL: Normalize plot number for consistent matching
+       const clean: any = prunePayload(item);
        if (clean.plotNumber) clean.plotNumber = normalizePlot(clean.plotNumber);
        return clean;
     });
@@ -218,12 +178,11 @@ export const saveInfraReferences = async (items: Partial<InfraReferenceItem>[]):
       .insert(cleanChunk);
 
     if (error) {
-      console.error(`Error saving chunk ${i} to ${i + CHUNK_SIZE}:`, error);
+      console.error(`Error saving chunk ${i}:`, error);
       hasError = true;
       break; 
     }
   }
-
   return !hasError;
 };
 
