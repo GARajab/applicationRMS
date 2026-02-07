@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Icons } from './components/Icons';
 import * as XLSX from 'xlsx';
 import { RecordItem, InfraReferenceItem } from './types';
-import { getRecords, addRecord, updateRecord, deleteRecord, searchInfraReferences, getInfraHookData, saveInfraReferences } from './services/storageService';
+import { getRecords, addRecord, updateRecord, deleteRecord, searchInfraReferences, getInfraHookData, saveInfraReferences, getExistingInfraPlots } from './services/storageService';
 
 // --- Constants ---
 
@@ -44,7 +44,7 @@ const parseDateSafe = (value: any): string => {
   return isNaN(d.getTime()) ? '' : d.toISOString().split('T')[0];
 };
 
-const normalizePlot = (s: any) => String(s || '').trim();
+const normalizePlot = (s: any) => String(s || '').trim().toUpperCase();
 
 const getValueByFuzzyKey = (row: any, ...candidates: string[]): string => {
   const rowKeys = Object.keys(row);
@@ -142,7 +142,7 @@ const EditModal: React.FC<{ record: RecordItem, onClose: () => void, onSave: (u:
             <input 
               value={form.label} 
               onChange={e => setForm({ ...form, label: e.target.value })}
-              className="w-full px-4 py-3 bg-slate-50 dark:bg-black border border-slate-200 dark:border-white/10 rounded-xl text-sm outline-none focus:ring-1 focus:ring-indigo-500"
+              className="w-full px-4 py-3 bg-slate-50 dark:bg-black border border-slate-200 dark:border-white/10 rounded-xl text-sm outline-none focus:ring-1 focus:ring-indigo-500 font-normal"
             />
           </div>
           <div className="space-y-1">
@@ -150,7 +150,7 @@ const EditModal: React.FC<{ record: RecordItem, onClose: () => void, onSave: (u:
             <select 
               value={form.status} 
               onChange={e => setForm({ ...form, status: e.target.value })}
-              className="w-full px-4 py-3 bg-slate-50 dark:bg-black border border-slate-200 dark:border-white/10 rounded-xl text-sm outline-none focus:ring-1 focus:ring-indigo-500 appearance-none"
+              className="w-full px-4 py-3 bg-slate-50 dark:bg-black border border-slate-200 dark:border-white/10 rounded-xl text-sm outline-none focus:ring-1 focus:ring-indigo-500 appearance-none font-normal"
             >
               {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
@@ -160,7 +160,7 @@ const EditModal: React.FC<{ record: RecordItem, onClose: () => void, onSave: (u:
             <input 
               value={form.zone} 
               onChange={e => setForm({ ...form, zone: e.target.value })}
-              className="w-full px-4 py-3 bg-slate-50 dark:bg-black border border-slate-200 dark:border-white/10 rounded-xl text-sm outline-none focus:ring-1 focus:ring-indigo-500"
+              className="w-full px-4 py-3 bg-slate-50 dark:bg-black border border-slate-200 dark:border-white/10 rounded-xl text-sm outline-none focus:ring-1 focus:ring-indigo-500 font-normal"
             />
           </div>
           <div className="space-y-1">
@@ -168,7 +168,7 @@ const EditModal: React.FC<{ record: RecordItem, onClose: () => void, onSave: (u:
             <input 
               value={form.plotNumber} 
               onChange={e => setForm({ ...form, plotNumber: e.target.value })}
-              className="w-full px-4 py-3 bg-slate-50 dark:bg-black border border-slate-200 dark:border-white/10 rounded-xl text-sm outline-none focus:ring-1 focus:ring-indigo-500"
+              className="w-full px-4 py-3 bg-slate-50 dark:bg-black border border-slate-200 dark:border-white/10 rounded-xl text-sm outline-none focus:ring-1 focus:ring-indigo-500 font-normal"
             />
           </div>
           <div className="space-y-1">
@@ -176,7 +176,7 @@ const EditModal: React.FC<{ record: RecordItem, onClose: () => void, onSave: (u:
             <input 
               value={form.wayleaveNumber} 
               onChange={e => setForm({ ...form, wayleaveNumber: e.target.value })}
-              className="w-full px-4 py-3 bg-slate-50 dark:bg-black border border-slate-200 dark:border-white/10 rounded-xl text-sm outline-none focus:ring-1 focus:ring-indigo-500"
+              className="w-full px-4 py-3 bg-slate-50 dark:bg-black border border-slate-200 dark:border-white/10 rounded-xl text-sm outline-none focus:ring-1 focus:ring-indigo-500 font-normal"
             />
           </div>
           <div className="space-y-1">
@@ -184,7 +184,7 @@ const EditModal: React.FC<{ record: RecordItem, onClose: () => void, onSave: (u:
             <input 
               value={form.accountNumber} 
               onChange={e => setForm({ ...form, accountNumber: e.target.value })}
-              className="w-full px-4 py-3 bg-slate-50 dark:bg-black border border-slate-200 dark:border-white/10 rounded-xl text-sm outline-none focus:ring-1 focus:ring-indigo-500"
+              className="w-full px-4 py-3 bg-slate-50 dark:bg-black border border-slate-200 dark:border-white/10 rounded-xl text-sm outline-none focus:ring-1 focus:ring-indigo-500 font-normal"
             />
           </div>
         </div>
@@ -503,13 +503,8 @@ const App: React.FC = () => {
   const [showUpload, setShowUpload] = useState(false);
   const [infraHookData, setInfraHookData] = useState<Record<string, { appNo: string, isPaid: boolean }>>({});
   
-  // Feedback
   const [feedback, setFeedback] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
-  
-  // Confirmation
   const [confirmState, setConfirmState] = useState<{ message: string, onConfirm: () => void } | null>(null);
-
-  // Editing
   const [editingRecord, setEditingRecord] = useState<RecordItem | null>(null);
 
   const [importProgress, setImportProgress] = useState<{ 
@@ -545,34 +540,39 @@ const App: React.FC = () => {
       const stagedInfra: any[] = [];
       const lowerValidStatuses = VALID_IMPORT_STATUSES.map(s => s.toLowerCase().trim());
 
+      // Fetch existing plot numbers to avoid duplicating Infra data
+      const allDetectedPlots = rawData.map(r => normalizePlot(getValueByFuzzyKey(r, "Plot Number", "Plot"))).filter(Boolean);
+      const existingPlots = await getExistingInfraPlots(allDetectedPlots);
+      const existingRefs = new Set(records.map(r => r.referenceNumber));
+
       rawData.forEach((row: any) => {
-        const ref = getValueByFuzzyKey(row, "Reference Number", "Reference", "Ref", "Project Ref").toUpperCase();
-        const plot = normalizePlot(getValueByFuzzyKey(row, "Plot Number", "Parcel", "Plot", "Plot No"));
-        const sourceStatusRaw = getValueByFuzzyKey(row, "Status", "Workflow Status", "Source Status").trim();
+        const ref = getValueByFuzzyKey(row, "Reference Number", "Reference", "Ref").toUpperCase();
+        const plot = normalizePlot(getValueByFuzzyKey(row, "Plot Number", "Plot"));
+        const sourceStatusRaw = getValueByFuzzyKey(row, "Status", "Workflow Status").trim();
         const sourceStatusLower = sourceStatusRaw.toLowerCase();
         const isValidStatus = lowerValidStatuses.includes(sourceStatusLower);
 
-        if (isValidStatus) {
+        if (isValidStatus && !existingRefs.has(ref)) {
           stagedProjects.push({
-            label: getValueByFuzzyKey(row, "Label", "Title", "Name", "Project Name") || 'Untitled',
+            label: getValueByFuzzyKey(row, "Label", "Title", "Project Name") || 'Untitled',
             status: mapSourceToUIStatus(sourceStatusRaw),
             plotNumber: plot,
             referenceNumber: ref,
-            zone: getValueByFuzzyKey(row, "Zone", "Investment Zone") || '',
-            block: getValueByFuzzyKey(row, "Block", "Block Number") || '',
+            zone: getValueByFuzzyKey(row, "Zone") || '',
+            block: getValueByFuzzyKey(row, "Block") || '',
             scheduleStartDate: parseDateSafe(getValueByFuzzyKey(row, "Schedule Start", "Start Date")),
-            wayleaveNumber: getValueByFuzzyKey(row, "Wayleave", "Wayleave No") || '',
-            accountNumber: getValueByFuzzyKey(row, "Account", "Account Number") || '',
+            wayleaveNumber: getValueByFuzzyKey(row, "Wayleave") || '',
+            accountNumber: getValueByFuzzyKey(row, "Account") || '',
             requireUSP: false,
             createdAt: new Date().toISOString()
           });
         } 
-        else if (plot && plot !== '') {
+        else if (plot && plot !== '' && !existingPlots.has(plot)) {
           stagedInfra.push({
-            applicationNumber: getValueByFuzzyKey(row, "Application Number", "App No", "Reference"),
+            applicationNumber: getValueByFuzzyKey(row, "Application Number", "App No"),
             plotNumber: plot,
-            ownerNameEn: getValueByFuzzyKey(row, "Owner", "Name"),
-            initialPaymentDate: getValueByFuzzyKey(row, "First Installment", "Initial Payment Date"),
+            ownerNameEn: getValueByFuzzyKey(row, "Owner"),
+            initialPaymentDate: getValueByFuzzyKey(row, "First Installment", "Initial Payment"),
             secondPayment: getValueByFuzzyKey(row, "Second Installment"),
             thirdPayment: getValueByFuzzyKey(row, "Final Settlement"),
             createdAt: new Date().toISOString()
@@ -624,14 +624,14 @@ const App: React.FC = () => {
 
   const handleDelete = (id: string) => {
     setConfirmState({
-      message: "Are you sure you want to permanently delete this project record? This action cannot be undone.",
+      message: "Confirm deletion of this record? This cannot be undone.",
       onConfirm: async () => {
         const success = await deleteRecord(id);
         if (success) {
-          setFeedback({ message: "Record deleted successfully", type: 'success' });
+          setFeedback({ message: "Record removed", type: 'success' });
           loadData();
         } else {
-          setFeedback({ message: "Failed to delete record", type: 'error' });
+          setFeedback({ message: "Action failed", type: 'error' });
         }
         setConfirmState(null);
       }
@@ -642,7 +642,7 @@ const App: React.FC = () => {
     if (!editingRecord) return;
     const success = await updateRecord(editingRecord.id, updates);
     if (success) {
-      setFeedback({ message: "Project updated successfully", type: 'success' });
+      setFeedback({ message: "Record updated", type: 'success' });
       setEditingRecord(null);
       loadData();
     } else {
@@ -654,7 +654,7 @@ const App: React.FC = () => {
     <div className="fixed inset-0 bg-slate-900 flex items-center justify-center">
       <div className="text-center">
         <Icons.Spinner className="w-10 h-10 text-indigo-500 animate-spin mx-auto mb-4" />
-        <p className="text-slate-400 font-normal text-xs uppercase tracking-[0.2em]">Booting Nexus...</p>
+        <p className="text-slate-400 font-normal text-xs uppercase tracking-widest">Nexus System Loading...</p>
       </div>
     </div>
   );
@@ -718,30 +718,16 @@ const App: React.FC = () => {
            ) : <CalculatorView />}
         </div>
 
-        {/* --- Global Modals --- */}
-        
         {editingRecord && (
-          <EditModal 
-            record={editingRecord} 
-            onClose={() => setEditingRecord(null)} 
-            onSave={handleUpdateRecord} 
-          />
+          <EditModal record={editingRecord} onClose={() => setEditingRecord(null)} onSave={handleUpdateRecord} />
         )}
 
         {confirmState && (
-          <ConfirmModal 
-            message={confirmState.message} 
-            onConfirm={confirmState.onConfirm} 
-            onClose={() => setConfirmState(null)} 
-          />
+          <ConfirmModal message={confirmState.message} onConfirm={confirmState.onConfirm} onClose={() => setConfirmState(null)} />
         )}
 
         {feedback && (
-          <FeedbackMessage 
-            message={feedback.message} 
-            type={feedback.type} 
-            onClose={() => setFeedback(null)} 
-          />
+          <FeedbackMessage message={feedback.message} type={feedback.type} onClose={() => setFeedback(null)} />
         )}
 
         {showUpload && (
@@ -753,16 +739,16 @@ const App: React.FC = () => {
                           <div className="animate-fade-in text-left">
                              <div className="text-center mb-8">
                                 <h3 className="text-xl font-normal mb-1 text-slate-900 dark:text-white uppercase tracking-tight">Data Scan Ready</h3>
-                                <p className="text-[10px] text-slate-400 font-normal uppercase tracking-widest">Awaiting database commitment</p>
+                                <p className="text-[10px] text-slate-400 font-normal uppercase tracking-widest">Duplicates filtered automatically</p>
                              </div>
                              
                              <div className="grid grid-cols-2 gap-4 mb-8">
                                 <div className="p-5 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-white/5">
-                                    <div className="font-normal text-indigo-500 uppercase text-[9px] tracking-widest mb-1">Projects</div>
+                                    <div className="font-normal text-indigo-500 uppercase text-[9px] tracking-widest mb-1">New Projects</div>
                                     <div className="text-3xl font-normal text-slate-900 dark:text-white">{importProgress.projectsDetected}</div>
                                 </div>
                                 <div className="p-5 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-white/5">
-                                    <div className="font-normal text-emerald-500 uppercase text-[9px] tracking-widest mb-1">Infra Data</div>
+                                    <div className="font-normal text-emerald-500 uppercase text-[9px] tracking-widest mb-1">New Infra</div>
                                     <div className="text-3xl font-normal text-slate-900 dark:text-white">{importProgress.infraDetected}</div>
                                 </div>
                              </div>
@@ -787,7 +773,7 @@ const App: React.FC = () => {
                                 <Icons.Check className="w-8 h-8" />
                              </div>
                              <h3 className="text-xl font-normal mb-1 text-slate-900 dark:text-white uppercase tracking-tight">Task Complete</h3>
-                             <p className="text-[10px] text-slate-400 font-normal uppercase tracking-widest mb-8">Import operation finished successfully</p>
+                             <p className="text-[10px] text-slate-400 font-normal uppercase tracking-widest mb-8">Sync operation successful</p>
                              
                              <button onClick={() => { setImportProgress({ total:0, current:0, active:false, success:0, error:0, finished:false, projectsDetected:0, infraDetected:0, summaryPhase: false, stagedProjects:[], stagedInfra:[] }); setShowUpload(false); }} className="w-full py-3 bg-slate-900 dark:bg-white text-white dark:text-black rounded-xl font-normal uppercase text-[11px] tracking-widest transition-all">Dismiss</button>
                           </div>
@@ -799,7 +785,7 @@ const App: React.FC = () => {
                               <Icons.Excel className="w-8 h-8 text-indigo-600" />
                           </div>
                           <h3 className="text-xl font-normal mb-2 text-slate-900 dark:text-white tracking-tight uppercase">Import Dataset</h3>
-                          <p className="text-xs text-slate-500 mb-8 font-normal">Select an Excel file to synchronize records.</p>
+                          <p className="text-xs text-slate-500 mb-8 font-normal">Excel file synchronization (duplicates auto-skipped).</p>
                           
                           <input type="file" id="upload-input" className="hidden" accept=".xlsx" onChange={(e) => e.target.files?.[0] && handleExcelUpload(e.target.files[0])} />
                           <div className="flex flex-col gap-2">
