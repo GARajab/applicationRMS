@@ -418,24 +418,66 @@ const App: React.FC = () => {
 
   useEffect(() => { loadRecords(); }, []);
 
+  // FIXED: handleExcelUpload now maps all required RecordItem fields correctly
   const handleExcelUpload = async (file: File) => {
     const reader = new FileReader();
     reader.onload = async (e) => {
       const wb = XLSX.read(e.target?.result, { type: 'binary' });
       const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
-      const mapped = data.map((row: any) => ({
-             id: '',
+      
+      const mapped: RecordItem[] = data.map((row: any) => ({
+             id: '', // Will be handled by addRecord logic or backend
              label: getValueByFuzzyKey(row, "Label", "Title") || 'Untitled',
              status: getValueByFuzzyKey(row, "Status") || "Assign planning",
              plotNumber: getValueByFuzzyKey(row, "Plot Number", "Parcel"),
-             referenceNumber: getValueByFuzzyKey(row, "Reference"),
-             zone: getValueByFuzzyKey(row, "Zone"),
-             createdAt: new Date().toISOString()
-             // ... map other fields as needed
+             referenceNumber: getValueByFuzzyKey(row, "Reference") || '-',
+             zone: getValueByFuzzyKey(row, "Zone") || '',
+             // Mandatory fields with defaults
+             block: getValueByFuzzyKey(row, "Block") || '',
+             scheduleStartDate: parseDateSafe(getValueByFuzzyKey(row, "Schedule Start", "Start Date")) || new Date().toISOString(),
+             wayleaveNumber: getValueByFuzzyKey(row, "Wayleave") || '',
+             accountNumber: getValueByFuzzyKey(row, "Account") || '',
+             requireUSP: false,
+             createdAt: new Date().toISOString(),
+             // Map other optional fields to ensure data isn't lost
+             subtype: getValueByFuzzyKey(row, "Subtype"),
+             type: getValueByFuzzyKey(row, "Type"),
+             phase: getValueByFuzzyKey(row, "Phase"),
+             scheduleEndDate: parseDateSafe(getValueByFuzzyKey(row, "Schedule End", "End Date")),
+             userConnected: getValueByFuzzyKey(row, "User Connected"),
+             createdBy: getValueByFuzzyKey(row, "Created By"),
+             capitalContribution: getValueByFuzzyKey(row, "Capital Contribution"),
+             nominatedContractor: getValueByFuzzyKey(row, "Nominated Contractor"),
+             urgent: String(getValueByFuzzyKey(row, "Urgent")).toLowerCase() === 'yes',
+             lastShutdown: getValueByFuzzyKey(row, "Last Shutdown"),
+             planningEngineer: getValueByFuzzyKey(row, "Planning Engineer"),
+             constructionEngineer: getValueByFuzzyKey(row, "Construction Engineer"),
+             supervisor: getValueByFuzzyKey(row, "Supervisor"),
+             plannedTotalCost: getValueByFuzzyKey(row, "Planned Total Cost"),
+             plannedMaterialCost: getValueByFuzzyKey(row, "Planned Material Cost"),
+             plannedServiceCost: getValueByFuzzyKey(row, "Planned Service Cost"),
+             paymentDate: parseDateSafe(getValueByFuzzyKey(row, "Payment Date")),
+             totalPower: getValueByFuzzyKey(row, "Total Power"),
+             contractorAssignDate: parseDateSafe(getValueByFuzzyKey(row, "Contractor Assign Date")),
+             workOrder: getValueByFuzzyKey(row, "Work Order"),
+             customerCpr: getValueByFuzzyKey(row, "Customer CPR"),
+             jobType: getValueByFuzzyKey(row, "Job Type"),
+             governorate: getValueByFuzzyKey(row, "Governorate"),
+             nasCode: getValueByFuzzyKey(row, "NAS Code"),
+             description: getValueByFuzzyKey(row, "Description"),
+             mtcContractor: getValueByFuzzyKey(row, "MTC Contractor"),
+             workflowEntryDate: parseDateSafe(getValueByFuzzyKey(row, "Workflow Entry Date")),
+             contractorPaymentDate: parseDateSafe(getValueByFuzzyKey(row, "Contractor Payment Date")),
+             installationContractor: getValueByFuzzyKey(row, "Installation Contractor"),
       }));
-      for(const item of mapped) await addRecord(item);
+      
+      let addedCount = 0;
+      for(const item of mapped) {
+          if (await addRecord(item)) addedCount++;
+      }
       loadRecords();
       setShowUpload(false);
+      alert(`Imported ${addedCount} records successfully.`);
     };
     reader.readAsBinaryString(file);
   };
