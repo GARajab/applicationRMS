@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Icons } from './components/Icons';
 import * as XLSX from 'xlsx';
 import { RecordItem, InfraReferenceItem } from './types';
-import { getRecords, addRecord, deleteRecord, searchInfraReferences, getPaidPlotNumbers } from './services/storageService';
+import { getRecords, addRecord, deleteRecord, searchInfraReferences, getPaidPlotNumbers, saveInfraReferences } from './services/storageService';
 
 // --- Constants ---
 const STATUS_SEQUENCE = [
@@ -338,9 +338,11 @@ const App: React.FC = () => {
 
   // Progress State
   const [importProgress, setImportProgress] = useState<{ 
-    total: number, current: number, active: boolean, success: number, error: number, finished: boolean 
+    total: number, current: number, active: boolean, success: number, error: number, finished: boolean,
+    projectsDetected: number, infraDetected: number, summaryPhase: boolean, stagedProjects: any[], stagedInfra: any[]
   }>({
-    total: 0, current: 0, active: false, success: 0, error: 0, finished: false
+    total: 0, current: 0, active: false, success: 0, error: 0, finished: false,
+    projectsDetected: 0, infraDetected: 0, summaryPhase: false, stagedProjects: [], stagedInfra: []
   });
 
   const loadData = async () => {
@@ -363,46 +365,90 @@ const App: React.FC = () => {
       if (!resultData) return;
       
       const wb = XLSX.read(resultData, { type: 'binary' });
-      const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+      const rawData = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
       
-      const total = data.length;
-      setImportProgress({ total, current: 0, active: true, success: 0, error: 0, finished: false });
+      const stagedProjects: any[] = [];
+      const stagedInfra: any[] = [];
 
-      // HIGH-COMPATIBILITY MAPPING:
-      // Removed 'subtype' and other risky columns from default mapper 
-      // as they caused PGRST204 errors in the user's current DB state.
-      const mapped: any[] = data.map((row: any) => ({
-             label: getValueByFuzzyKey(row, "Label", "Title") || 'Untitled Project',
-             status: getValueByFuzzyKey(row, "Status") || "Assign planning",
-             plotNumber: normalizePlot(getValueByFuzzyKey(row, "Plot Number", "Parcel")),
-             referenceNumber: getValueByFuzzyKey(row, "Reference", "Ref") || 'N/A',
-             zone: getValueByFuzzyKey(row, "Zone") || '',
-             block: getValueByFuzzyKey(row, "Block") || '',
-             scheduleStartDate: parseDateSafe(getValueByFuzzyKey(row, "Schedule Start", "Start Date")) || new Date().toISOString(),
-             wayleaveNumber: getValueByFuzzyKey(row, "Wayleave") || '',
-             accountNumber: getValueByFuzzyKey(row, "Account") || '',
-             requireUSP: false,
-             createdAt: new Date().toISOString(),
-             momaaLoad: getValueByFuzzyKey(row, "Load") || '',
-             applicationNumber: getValueByFuzzyKey(row, "Application") || ''
-      }));
-      
-      for(let i = 0; i < mapped.length; i++) {
-          const item = mapped[i];
-          const result = await addRecord(item as RecordItem);
-          
-          setImportProgress(prev => ({
-            ...prev,
-            current: i + 1,
-            success: result ? prev.success + 1 : prev.success,
-            error: !result ? prev.error + 1 : prev.error
-          }));
-      }
+      rawData.forEach((row: any) => {
+        const ref = getValueByFuzzyKey(row, "Reference", "Ref", "Project Ref");
+        const plot = normalizePlot(getValueByFuzzyKey(row, "Plot Number", "Parcel", "Plot"));
+        
+        // CRITERIA: A4 or A5 in Reference Number
+        if (ref.toUpperCase().includes('A4') || ref.toUpperCase().includes('A5')) {
+          stagedProjects.push({
+            label: getValueByFuzzyKey(row, "Label", "Title", "Name") || 'Untitled Project',
+            status: getValueByFuzzyKey(row, "Status") || "Assign planning",
+            plotNumber: plot,
+            referenceNumber: ref,
+            zone: getValueByFuzzyKey(row, "Zone") || '',
+            block: getValueByFuzzyKey(row, "Block") || '',
+            scheduleStartDate: parseDateSafe(getValueByFuzzyKey(row, "Schedule Start", "Start Date")),
+            wayleaveNumber: getValueByFuzzyKey(row, "Wayleave") || '',
+            accountNumber: getValueByFuzzyKey(row, "Account") || '',
+            requireUSP: false,
+            createdAt: new Date().toISOString()
+          });
+        } 
+        // INFRA CRITERIA: Has a Plot Number but no A4/A5 ref
+        else if (plot && plot !== '') {
+          stagedInfra.push({
+            plotNumber: plot,
+            ownerNameEn: getValueByFuzzyKey(row, "Owner", "Name", "Client"),
+            initialPaymentDate: getValueByFuzzyKey(row, "Payment Date", "Paid Date", "First Payment"),
+            secondPayment: getValueByFuzzyKey(row, "Second Payment"),
+            thirdPayment: getValueByFuzzyKey(row, "Third Payment", "Final Payment"),
+            momaaLoad: getValueByFuzzyKey(row, "Load"),
+            createdAt: new Date().toISOString()
+          });
+        }
+      });
 
-      await loadData();
-      setImportProgress(prev => ({ ...prev, finished: true }));
+      setImportProgress({
+        total: stagedProjects.length + stagedInfra.length,
+        current: 0,
+        active: true,
+        success: 0,
+        error: 0,
+        finished: false,
+        projectsDetected: stagedProjects.length,
+        infraDetected: stagedInfra.length,
+        summaryPhase: true,
+        stagedProjects,
+        stagedInfra
+      });
     };
     reader.readAsBinaryString(file);
+  };
+
+  const startSync = async () => {
+    setImportProgress(prev => ({ ...prev, summaryPhase: false }));
+    
+    // 1. Sync Projects
+    for (let i = 0; i < importProgress.stagedProjects.length; i++) {
+      const item = importProgress.stagedProjects[i];
+      const result = await addRecord(item as RecordItem);
+      setImportProgress(prev => ({
+        ...prev,
+        current: prev.current + 1,
+        success: result ? prev.success + 1 : prev.success,
+        error: !result ? prev.error + 1 : prev.error
+      }));
+    }
+
+    // 2. Sync Infra Data in batch
+    if (importProgress.stagedInfra.length > 0) {
+      const success = await saveInfraReferences(importProgress.stagedInfra);
+      setImportProgress(prev => ({
+        ...prev,
+        current: prev.current + prev.stagedInfra.length,
+        success: success ? prev.success + prev.stagedInfra.length : prev.success,
+        error: !success ? prev.error + prev.stagedInfra.length : prev.error
+      }));
+    }
+
+    await loadData();
+    setImportProgress(prev => ({ ...prev, finished: true }));
   };
 
   if (loading) return (
@@ -478,7 +524,34 @@ const App: React.FC = () => {
                 <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] p-10 max-w-md w-full shadow-2xl animate-scale-in border border-white/10 overflow-hidden">
                     {importProgress.active ? (
                       <div className="text-center py-6">
-                        {!importProgress.finished ? (
+                        {importProgress.summaryPhase ? (
+                          <div className="animate-fade-in">
+                             <h3 className="text-2xl font-black mb-1 text-slate-900 dark:text-white uppercase tracking-tighter">Classification Result</h3>
+                             <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mb-8">Data meeting defined criteria</p>
+                             
+                             <div className="space-y-4 mb-8">
+                                <div className="p-6 bg-indigo-50 dark:bg-indigo-950/30 rounded-3xl border border-indigo-100 dark:border-indigo-500/20 flex justify-between items-center">
+                                    <div className="text-left">
+                                        <div className="font-black text-indigo-600 uppercase text-[10px] tracking-widest">A4/A5 Projects</div>
+                                        <div className="text-2xl font-black text-slate-900 dark:text-white">{importProgress.projectsDetected}</div>
+                                    </div>
+                                    <Icons.Dashboard className="w-8 h-8 text-indigo-400 opacity-50" />
+                                </div>
+                                <div className="p-6 bg-slate-50 dark:bg-slate-800/30 rounded-3xl border border-slate-100 dark:border-white/5 flex justify-between items-center">
+                                    <div className="text-left">
+                                        <div className="font-black text-slate-500 uppercase text-[10px] tracking-widest">Infrastructure Data</div>
+                                        <div className="text-2xl font-black text-slate-900 dark:text-white">{importProgress.infraDetected}</div>
+                                    </div>
+                                    <Icons.Calculator className="w-8 h-8 text-slate-400 opacity-50" />
+                                </div>
+                             </div>
+
+                             <div className="flex gap-3">
+                                <button onClick={startSync} className="flex-1 py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl shadow-indigo-600/20">Commit to DB</button>
+                                <button onClick={() => setShowUpload(false)} className="px-6 py-4 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-2xl font-black uppercase text-xs">Cancel</button>
+                             </div>
+                          </div>
+                        ) : !importProgress.finished ? (
                           <>
                             <div className="w-24 h-24 rounded-full border-4 border-slate-100 dark:border-white/5 flex items-center justify-center mx-auto mb-8 relative">
                                <div className="absolute inset-0 border-4 border-indigo-500 rounded-full border-t-transparent animate-spin"></div>
@@ -504,21 +577,23 @@ const App: React.FC = () => {
                           </div>
                         )}
 
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="bg-emerald-500/10 p-4 rounded-3xl border border-emerald-500/20">
-                                <div className="text-[10px] font-black text-emerald-500 uppercase tracking-widest mb-1">Success</div>
-                                <div className="text-2xl font-black text-emerald-600">{importProgress.success}</div>
-                            </div>
-                            <div className="bg-rose-500/10 p-4 rounded-3xl border border-rose-500/20">
-                                <div className="text-[10px] font-black text-rose-500 uppercase tracking-widest mb-1">Failed</div>
-                                <div className="text-2xl font-black text-rose-600">{importProgress.error}</div>
-                            </div>
-                        </div>
+                        {!importProgress.summaryPhase && (
+                          <div className="grid grid-cols-2 gap-4">
+                              <div className="bg-emerald-500/10 p-4 rounded-3xl border border-emerald-500/20">
+                                  <div className="text-[10px] font-black text-emerald-500 uppercase tracking-widest mb-1">Success</div>
+                                  <div className="text-2xl font-black text-emerald-600">{importProgress.success}</div>
+                              </div>
+                              <div className="bg-rose-500/10 p-4 rounded-3xl border border-rose-500/20">
+                                  <div className="text-[10px] font-black text-rose-500 uppercase tracking-widest mb-1">Failed</div>
+                                  <div className="text-2xl font-black text-rose-600">{importProgress.error}</div>
+                              </div>
+                          </div>
+                        )}
 
                         {importProgress.finished && (
                           <button 
                             onClick={() => {
-                              setImportProgress({ total:0, current:0, active:false, success:0, error:0, finished:false });
+                              setImportProgress({ total:0, current:0, active:false, success:0, error:0, finished:false, projectsDetected:0, infraDetected:0, summaryPhase: false, stagedProjects:[], stagedInfra:[] });
                               setShowUpload(false);
                             }}
                             className="w-full mt-8 py-4 bg-slate-900 dark:bg-white text-white dark:text-black rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl transition-all active:scale-95"
