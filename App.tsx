@@ -7,7 +7,7 @@ import { generateRecordReport } from './services/geminiService';
 
 // --- Constants ---
 const STATUS_SEQUENCE = [
-  "All Projects", // Added 'All' tab
+  "All Projects", 
   "Assign planning", "Site Visit", "Design", "Design approval", 
   "GIS digitalization", "Wayleave", "Cost estimation", 
   "Attach Utilities Drawing", "Engineer approval", "Redesign", 
@@ -432,7 +432,7 @@ const App: React.FC = () => {
              plotNumber: getValueByFuzzyKey(row, "Plot Number", "Parcel"),
              referenceNumber: getValueByFuzzyKey(row, "Reference") || '-',
              zone: getValueByFuzzyKey(row, "Zone") || '',
-             // Mandatory fields with defaults
+             // Mandatory fields with defaults (Fixing TS2345)
              block: getValueByFuzzyKey(row, "Block") || '',
              scheduleStartDate: parseDateSafe(getValueByFuzzyKey(row, "Schedule Start", "Start Date")) || new Date().toISOString(),
              wayleaveNumber: getValueByFuzzyKey(row, "Wayleave") || '',
