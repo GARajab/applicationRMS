@@ -40,6 +40,11 @@ const mapSourceToUIStatus = (sourceStatus: string): string => {
 
 const parseDateSafe = (value: any): string => {
   if (!value) return '';
+  // Handle Excel date serial numbers if necessary
+  if (typeof value === 'number') {
+    const date = new Date((value - 25569) * 86400 * 1000);
+    return date.toISOString().split('T')[0];
+  }
   const d = new Date(value);
   return isNaN(d.getTime()) ? '' : d.toISOString().split('T')[0];
 };
@@ -72,7 +77,7 @@ const FeedbackMessage: React.FC<{ message: string, type: 'success' | 'error', on
   }, [onClose]);
 
   return (
-    <div className={`fixed bottom-8 right-8 z-[100] px-6 py-4 rounded-2xl shadow-2xl border flex items-center gap-3 animate-fade-in-up ${
+    <div className={`fixed bottom-8 right-8 z-[100] px-6 py-4 rounded-2xl shadow-2xl border flex items-center gap-3 animate-fade-in-up font-normal ${
       type === 'success' ? 'bg-emerald-500 border-emerald-400 text-white' : 'bg-rose-500 border-rose-400 text-white'
     }`}>
       {type === 'success' ? <Icons.Check className="w-5 h-5" /> : <Icons.Alert className="w-5 h-5" />}
@@ -108,25 +113,89 @@ const InfraHookBadge: React.FC<{ plot: string, hookData: Record<string, { appNo:
   );
 };
 
-const StatCard: React.FC<{ label: string; value: string | number; icon: any; color: string }> = ({ label, value, icon: Icon, color }) => (
-  <div className="bg-white dark:bg-slate-900/40 backdrop-blur-md p-6 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm flex items-center gap-5 hover:shadow-md transition-all duration-300">
+const StatCard: React.FC<{ label: string; value: string | number; icon: any; color: string; onClick?: () => void }> = ({ label, value, icon: Icon, color, onClick }) => (
+  <button 
+    onClick={onClick}
+    disabled={!onClick}
+    className={`bg-white dark:bg-slate-900/40 backdrop-blur-md p-6 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm flex items-center gap-5 hover:shadow-md transition-all duration-300 w-full text-left ${onClick ? 'cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5' : 'cursor-default'}`}
+  >
     <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ${color} bg-opacity-10`}>
       <Icon className={`w-6 h-6 ${color.replace('bg-', 'text-')}`} />
     </div>
-    <div>
+    <div className="flex-1">
       <p className="text-slate-400 text-xs font-normal uppercase tracking-widest mb-1">{label}</p>
       <p className="text-2xl font-normal text-slate-900 dark:text-white leading-none">{value}</p>
     </div>
-  </div>
+    {onClick && <Icons.Right className="w-4 h-4 text-slate-300" />}
+  </button>
 );
 
 // --- Modals ---
 
+const DelayedAlertModal: React.FC<{ delayedRecords: RecordItem[], onClose: () => void }> = ({ delayedRecords, onClose }) => (
+  <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[80] flex items-center justify-center p-4 animate-fade-in font-normal">
+    <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] p-10 max-w-3xl w-full shadow-2xl animate-scale-in border border-white/5 overflow-y-auto max-h-[90vh] custom-scrollbar">
+      <div className="flex justify-between items-center mb-8">
+        <div>
+          <h3 className="text-xl font-normal text-slate-900 dark:text-white uppercase tracking-tight">Delayed Applications</h3>
+          <p className="text-[10px] text-slate-400 font-normal uppercase tracking-widest mt-1">Found {delayedRecords.length} records pending > 7 days</p>
+        </div>
+        <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 transition-colors"><Icons.Close className="w-5 h-5" /></button>
+      </div>
+
+      <div className="space-y-4">
+        {delayedRecords.length === 0 ? (
+          <div className="text-center py-10 text-slate-400 italic">No delayed applications detected.</div>
+        ) : delayedRecords.map(r => {
+          const creationDate = new Date(r.createdAt);
+          const daysOld = Math.floor((Date.now() - creationDate.getTime()) / (1000 * 60 * 60 * 24));
+          return (
+            <div key={r.id} className="p-5 rounded-2xl bg-slate-50 dark:bg-white/5 border border-slate-100 dark:border-white/5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-normal text-slate-900 dark:text-white mb-0.5">{r.label}</p>
+                <div className="flex flex-wrap gap-x-3 gap-y-1">
+                  <p className="text-[10px] text-slate-400 font-normal uppercase tracking-widest">{r.referenceNumber} • {r.status}</p>
+                  <p className="text-[10px] text-indigo-400 font-normal uppercase tracking-widest">Created: {creationDate.toLocaleDateString()}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="px-3 py-1 bg-rose-500/10 border border-rose-500/20 rounded-lg text-rose-600 dark:text-rose-400 text-[10px] font-normal uppercase tracking-widest">
+                  {daysOld} Days Delay
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="mt-10">
+        <button 
+          onClick={onClose}
+          className="w-full py-3.5 bg-slate-900 dark:bg-white text-white dark:text-black rounded-xl font-normal uppercase text-[11px] tracking-widest shadow-md transition-all"
+        >
+          Close Dashboard
+        </button>
+      </div>
+    </div>
+  </div>
+);
+
 const EditModal: React.FC<{ record: RecordItem, onClose: () => void, onSave: (u: Partial<RecordItem>) => void }> = ({ record, onClose, onSave }) => {
   const [form, setForm] = useState<Partial<RecordItem>>({ ...record });
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSave = () => {
+    // Validation for USP
+    if (form.status === 'USP' && (!form.sentToUSPDate || form.sentToUSPDate === '')) {
+      setError("USP Date is mandatory when status is set to USP.");
+      return;
+    }
+    setError(null);
+    onSave(form);
+  };
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[70] flex items-center justify-center p-4 animate-fade-in">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[70] flex items-center justify-center p-4 animate-fade-in font-normal">
       <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] p-10 max-w-2xl w-full shadow-2xl animate-scale-in border border-white/5 overflow-y-auto max-h-[90vh] custom-scrollbar">
         <div className="flex justify-between items-center mb-8">
           <div>
@@ -136,11 +205,18 @@ const EditModal: React.FC<{ record: RecordItem, onClose: () => void, onSave: (u:
           <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 transition-colors"><Icons.Close className="w-5 h-5" /></button>
         </div>
 
+        {error && (
+          <div className="mb-6 p-4 bg-rose-500/10 border border-rose-500/20 rounded-xl flex items-center gap-3 text-rose-600 dark:text-rose-400 text-sm animate-fade-in">
+            <Icons.Alert className="w-5 h-5 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-1">
             <label className="text-[10px] font-normal text-slate-400 uppercase tracking-widest ml-1">Project Label</label>
             <input 
-              value={form.label} 
+              value={form.label || ''} 
               onChange={e => setForm({ ...form, label: e.target.value })}
               className="w-full px-4 py-3 bg-slate-50 dark:bg-black border border-slate-200 dark:border-white/10 rounded-xl text-sm outline-none focus:ring-1 focus:ring-indigo-500 font-normal"
             />
@@ -156,17 +232,23 @@ const EditModal: React.FC<{ record: RecordItem, onClose: () => void, onSave: (u:
             </select>
           </div>
           <div className="space-y-1">
-            <label className="text-[10px] font-normal text-slate-400 uppercase tracking-widest ml-1">Zone</label>
+            <label className={`text-[10px] font-normal uppercase tracking-widest ml-1 ${form.status === 'USP' ? 'text-rose-500 font-medium' : 'text-slate-400'}`}>
+              USP Date {form.status === 'USP' && '(REQUIRED)'}
+            </label>
             <input 
-              value={form.zone} 
-              onChange={e => setForm({ ...form, zone: e.target.value })}
-              className="w-full px-4 py-3 bg-slate-50 dark:bg-black border border-slate-200 dark:border-white/10 rounded-xl text-sm outline-none focus:ring-1 focus:ring-indigo-500 font-normal"
+              type="date"
+              value={form.sentToUSPDate ? form.sentToUSPDate.split('T')[0] : ''} 
+              onChange={e => setForm({ ...form, sentToUSPDate: e.target.value })}
+              disabled={form.status !== 'USP' && !form.sentToUSPDate}
+              className={`w-full px-4 py-3 bg-slate-50 dark:bg-black border rounded-xl text-sm outline-none transition-all font-normal ${
+                form.status === 'USP' ? 'border-rose-300 dark:border-rose-500/30 focus:ring-rose-500' : 'border-slate-200 dark:border-white/10 focus:ring-indigo-500'
+              }`}
             />
           </div>
           <div className="space-y-1">
             <label className="text-[10px] font-normal text-slate-400 uppercase tracking-widest ml-1">Plot Number</label>
             <input 
-              value={form.plotNumber} 
+              value={form.plotNumber || ''} 
               onChange={e => setForm({ ...form, plotNumber: e.target.value })}
               className="w-full px-4 py-3 bg-slate-50 dark:bg-black border border-slate-200 dark:border-white/10 rounded-xl text-sm outline-none focus:ring-1 focus:ring-indigo-500 font-normal"
             />
@@ -174,7 +256,7 @@ const EditModal: React.FC<{ record: RecordItem, onClose: () => void, onSave: (u:
           <div className="space-y-1">
             <label className="text-[10px] font-normal text-slate-400 uppercase tracking-widest ml-1">Wayleave</label>
             <input 
-              value={form.wayleaveNumber} 
+              value={form.wayleaveNumber || ''} 
               onChange={e => setForm({ ...form, wayleaveNumber: e.target.value })}
               className="w-full px-4 py-3 bg-slate-50 dark:bg-black border border-slate-200 dark:border-white/10 rounded-xl text-sm outline-none focus:ring-1 focus:ring-indigo-500 font-normal"
             />
@@ -182,16 +264,26 @@ const EditModal: React.FC<{ record: RecordItem, onClose: () => void, onSave: (u:
           <div className="space-y-1">
             <label className="text-[10px] font-normal text-slate-400 uppercase tracking-widest ml-1">Account Number</label>
             <input 
-              value={form.accountNumber} 
+              value={form.accountNumber || ''} 
               onChange={e => setForm({ ...form, accountNumber: e.target.value })}
               className="w-full px-4 py-3 bg-slate-50 dark:bg-black border border-slate-200 dark:border-white/10 rounded-xl text-sm outline-none focus:ring-1 focus:ring-indigo-500 font-normal"
+            />
+          </div>
+          <div className="space-y-1 md:col-span-2">
+            <label className="text-[10px] font-normal text-slate-400 uppercase tracking-widest ml-1">Remarks / Justification</label>
+            <textarea 
+              value={form.justification || ''} 
+              onChange={e => setForm({ ...form, justification: e.target.value })}
+              placeholder="Enter remarks or justification for status changes..."
+              rows={3}
+              className="w-full px-4 py-3 bg-slate-50 dark:bg-black border border-slate-200 dark:border-white/10 rounded-xl text-sm outline-none focus:ring-1 focus:ring-indigo-500 font-normal resize-none"
             />
           </div>
         </div>
 
         <div className="mt-10 flex gap-3">
           <button 
-            onClick={() => onSave(form)}
+            onClick={handleSave}
             className="flex-1 py-3.5 bg-indigo-600 text-white rounded-xl font-normal uppercase text-[11px] tracking-widest shadow-md hover:bg-indigo-700 transition-all"
           >
             Save Changes
@@ -209,7 +301,7 @@ const EditModal: React.FC<{ record: RecordItem, onClose: () => void, onSave: (u:
 };
 
 const ConfirmModal: React.FC<{ message: string, onConfirm: () => void, onClose: () => void }> = ({ message, onConfirm, onClose }) => (
-  <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[80] flex items-center justify-center p-4 animate-fade-in">
+  <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[80] flex items-center justify-center p-4 animate-fade-in font-normal">
     <div className="bg-white dark:bg-slate-900 rounded-[2rem] p-10 max-w-md w-full shadow-2xl animate-scale-in border border-white/5 text-center">
       <div className="w-16 h-16 bg-rose-500/10 rounded-2xl flex items-center justify-center mx-auto mb-6">
         <Icons.Alert className="w-8 h-8 text-rose-500" />
@@ -233,8 +325,10 @@ const DashboardView: React.FC<{
   searchTerm: string,
   onUpload: () => void,
   onEdit: (r: RecordItem) => void,
-  onDelete: (id: string) => void
-}> = ({ records, infraHookData, onSearch, searchTerm, onUpload, onEdit, onDelete }) => {
+  onDelete: (id: string) => void,
+  onAlertsClick: () => void,
+  delayedCount: number
+}> = ({ records, infraHookData, onSearch, searchTerm, onUpload, onEdit, onDelete, onAlertsClick, delayedCount }) => {
   const [activeTab, setActiveTab] = useState("All Projects");
 
   const filteredData = useMemo(() => {
@@ -256,10 +350,17 @@ const DashboardView: React.FC<{
   const paidCount = (Object.values(infraHookData) as { appNo: string, isPaid: boolean }[]).filter(v => v.isPaid).length;
 
   return (
-    <div className="space-y-8 animate-fade-in-up">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <div className="space-y-8 animate-fade-in-up font-normal">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <StatCard label="Live Portfolio" value={records.length} icon={Icons.Dashboard} color="bg-indigo-500" />
-        <StatCard label="Infra Validated (YES)" value={paidCount} icon={Icons.Check} color="bg-emerald-500" />
+        <StatCard label="Infra Validated" value={paidCount} icon={Icons.Check} color="bg-emerald-500" />
+        <StatCard 
+          label="Delayed (>7 Days)" 
+          value={delayedCount} 
+          icon={Icons.Clock} 
+          color="bg-rose-500" 
+          onClick={delayedCount > 0 ? onAlertsClick : undefined}
+        />
       </div>
 
       <div className="sticky top-0 z-20 -mx-8 px-8 py-4 bg-slate-50/80 dark:bg-black/80 backdrop-blur-xl border-b border-slate-200 dark:border-white/5 overflow-x-auto no-scrollbar">
@@ -382,7 +483,7 @@ const CalculatorView: React.FC = () => {
   const finalCC = Math.max(0, ccVal - eddShare);
 
   return (
-    <div className="flex flex-col lg:flex-row gap-8 min-h-[70vh] animate-fade-in-up">
+    <div className="flex flex-col lg:flex-row gap-8 min-h-[70vh] animate-fade-in-up font-normal">
       <div className="w-full lg:w-1/3 flex flex-col gap-6">
         <div className="bg-white dark:bg-slate-900 p-8 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm">
           <h2 className="text-sm font-normal mb-6 text-slate-900 dark:text-white flex items-center gap-2 uppercase tracking-widest">
@@ -506,6 +607,17 @@ const App: React.FC = () => {
   const [feedback, setFeedback] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
   const [confirmState, setConfirmState] = useState<{ message: string, onConfirm: () => void } | null>(null);
   const [editingRecord, setEditingRecord] = useState<RecordItem | null>(null);
+  const [showDelayedModal, setShowDelayedModal] = useState(false);
+
+  const delayedRecords = useMemo(() => {
+    const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    return records.filter(r => {
+      const isPending = r.status !== 'Passed';
+      const isOld = (now - new Date(r.createdAt).getTime()) > SEVEN_DAYS_MS;
+      return isPending && isOld;
+    });
+  }, [records]);
 
   const [importProgress, setImportProgress] = useState<{ 
     total: number, current: number, active: boolean, success: number, error: number, finished: boolean,
@@ -540,7 +652,6 @@ const App: React.FC = () => {
       const stagedInfra: any[] = [];
       const lowerValidStatuses = VALID_IMPORT_STATUSES.map(s => s.toLowerCase().trim());
 
-      // Fetch existing plot numbers to avoid duplicating Infra data
       const allDetectedPlots = rawData.map(r => normalizePlot(getValueByFuzzyKey(r, "Plot Number", "Plot"))).filter(Boolean);
       const existingPlots = await getExistingInfraPlots(allDetectedPlots);
       const existingRefs = new Set(records.map(r => r.referenceNumber));
@@ -553,6 +664,10 @@ const App: React.FC = () => {
         const isValidStatus = lowerValidStatuses.includes(sourceStatusLower);
 
         if (isValidStatus && !existingRefs.has(ref)) {
+          // Extract specific Creation Date if it exists
+          const creationDateRaw = getValueByFuzzyKey(row, "Creation Date", "Entry Date", "Date Created", "Created At", "Workflow Entry Date");
+          const projectCreationDate = creationDateRaw ? new Date(parseDateSafe(creationDateRaw)).toISOString() : new Date().toISOString();
+
           stagedProjects.push({
             label: getValueByFuzzyKey(row, "Label", "Title", "Project Name") || 'Untitled',
             status: mapSourceToUIStatus(sourceStatusRaw),
@@ -564,7 +679,7 @@ const App: React.FC = () => {
             wayleaveNumber: getValueByFuzzyKey(row, "Wayleave") || '',
             accountNumber: getValueByFuzzyKey(row, "Account") || '',
             requireUSP: false,
-            createdAt: new Date().toISOString()
+            createdAt: projectCreationDate
           });
         } 
         else if (plot && plot !== '' && !existingPlots.has(plot)) {
@@ -661,14 +776,14 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-black font-sans text-slate-900 dark:text-slate-100 flex overflow-hidden">
-      <aside className="w-20 lg:w-64 bg-slate-900/95 dark:bg-slate-950/80 backdrop-blur-xl text-white flex flex-col fixed h-full z-50 border-r border-white/5">
+      <aside className="w-20 lg:w-64 bg-slate-900/95 dark:bg-slate-950/80 backdrop-blur-xl text-white flex flex-col fixed h-full z-50 border-r border-white/5 font-normal">
         <div className="p-8 flex flex-col items-center lg:items-start gap-3">
             <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center shadow-lg overflow-hidden p-1.5">
                 <img src={EWA_LOGO} alt="EWA Logo" className="w-full h-full object-contain" />
             </div>
             <div className="hidden lg:block">
                 <h1 className="font-normal text-lg tracking-tight uppercase leading-none">Rajab Management</h1>
-                <p className="text-[9px] font-normal text-indigo-400 tracking-widest mt-1">NEXUS SYSTEM</p>
+                <p className="text-[9px] font-normal text-indigo-400 tracking-widest mt-1 uppercase">Nexus System</p>
             </div>
         </div>
         
@@ -693,6 +808,15 @@ const App: React.FC = () => {
         </nav>
 
         <div className="p-6">
+            {delayedRecords.length > 0 && (
+              <button 
+                onClick={() => setShowDelayedModal(true)}
+                className="w-full mb-3 flex items-center justify-center gap-2 py-2.5 bg-rose-500/10 border border-rose-500/30 rounded-xl text-rose-500 hover:bg-rose-500/20 transition-all group"
+              >
+                <Icons.Alert className="w-4 h-4 animate-pulse-fast" />
+                <span className="hidden lg:block text-[10px] uppercase tracking-widest">Alerts ({delayedRecords.length})</span>
+              </button>
+            )}
             <div className="hidden lg:block p-4 rounded-2xl bg-indigo-500/5 border border-indigo-500/10 text-center">
                 <p className="text-[9px] font-normal uppercase text-indigo-400 tracking-widest mb-1.5">System Status</p>
                 <div className="flex items-center justify-center gap-2">
@@ -703,7 +827,7 @@ const App: React.FC = () => {
         </div>
       </aside>
 
-      <main className="flex-1 ml-20 lg:ml-64 p-10 overflow-y-auto h-screen custom-scrollbar">
+      <main className="flex-1 ml-20 lg:ml-64 p-10 overflow-y-auto h-screen custom-scrollbar font-normal">
         <div className="max-w-7xl mx-auto">
            {currentView === 'dashboard' ? (
              <DashboardView 
@@ -714,9 +838,17 @@ const App: React.FC = () => {
                onUpload={() => setShowUpload(true)}
                onEdit={(r) => setEditingRecord(r)}
                onDelete={handleDelete}
+               onAlertsClick={() => setShowDelayedModal(true)}
+               delayedCount={delayedRecords.length}
              />
            ) : <CalculatorView />}
         </div>
+
+        {/* --- Global Modals --- */}
+        
+        {showDelayedModal && (
+          <DelayedAlertModal delayedRecords={delayedRecords} onClose={() => setShowDelayedModal(false)} />
+        )}
 
         {editingRecord && (
           <EditModal record={editingRecord} onClose={() => setEditingRecord(null)} onSave={handleUpdateRecord} />
@@ -731,7 +863,7 @@ const App: React.FC = () => {
         )}
 
         {showUpload && (
-            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4 animate-fade-in">
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4 animate-fade-in font-normal">
                 <div className="bg-white dark:bg-slate-900 rounded-[2rem] p-8 max-w-xl w-full shadow-2xl animate-scale-in border border-white/5 overflow-y-auto max-h-[90vh] custom-scrollbar">
                     {importProgress.active ? (
                       <div className="text-center py-4">
@@ -739,7 +871,7 @@ const App: React.FC = () => {
                           <div className="animate-fade-in text-left">
                              <div className="text-center mb-8">
                                 <h3 className="text-xl font-normal mb-1 text-slate-900 dark:text-white uppercase tracking-tight">Data Scan Ready</h3>
-                                <p className="text-[10px] text-slate-400 font-normal uppercase tracking-widest">Duplicates filtered automatically</p>
+                                <p className="text-[10px] text-slate-400 font-normal uppercase tracking-widest">Historical dates used for alerts</p>
                              </div>
                              
                              <div className="grid grid-cols-2 gap-4 mb-8">
@@ -780,17 +912,17 @@ const App: React.FC = () => {
                         )}
                       </div>
                     ) : (
-                      <div className="text-center">
+                      <div className="text-center font-normal">
                           <div className="w-16 h-16 bg-indigo-50 dark:bg-indigo-900/20 rounded-2xl flex items-center justify-center mx-auto mb-6">
                               <Icons.Excel className="w-8 h-8 text-indigo-600" />
                           </div>
                           <h3 className="text-xl font-normal mb-2 text-slate-900 dark:text-white tracking-tight uppercase">Import Dataset</h3>
-                          <p className="text-xs text-slate-500 mb-8 font-normal">Excel file synchronization (duplicates auto-skipped).</p>
+                          <p className="text-xs text-slate-500 mb-8 font-normal leading-relaxed text-center">Excel synchronization. We will use the 'Creation Date' or 'Entry Date' from your file to track delays. Duplicates are auto-skipped.</p>
                           
                           <input type="file" id="upload-input" className="hidden" accept=".xlsx" onChange={(e) => e.target.files?.[0] && handleExcelUpload(e.target.files[0])} />
                           <div className="flex flex-col gap-2">
                               <label htmlFor="upload-input" className="w-full py-3.5 bg-indigo-600 text-white rounded-xl font-normal cursor-pointer hover:bg-indigo-700 transition-all shadow-md uppercase text-[11px] tracking-widest text-center">Browse Files</label>
-                              <button onClick={() => setShowUpload(false)} className="w-full py-3.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl font-normal hover:bg-slate-200 transition-all uppercase text-[11px] tracking-widest">Close</button>
+                              <button onClick={() => setShowUpload(false)} className="w-full py-3.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl font-normal hover:bg-slate-200 transition-all uppercase text-[11px] tracking-widest">Close Interface</button>
                           </div>
                       </div>
                     )}
