@@ -138,7 +138,7 @@ const DelayedAlertModal: React.FC<{ delayedRecords: RecordItem[], onClose: () =>
       <div className="flex justify-between items-center mb-8">
         <div>
           <h3 className="text-xl font-normal text-slate-900 dark:text-white uppercase tracking-tight">Delayed Applications</h3>
-          <p className="text-[10px] text-slate-400 font-normal uppercase tracking-widest mt-1">Found {delayedRecords.length} records pending > 7 days</p>
+          <p className="text-[10px] text-slate-400 font-normal uppercase tracking-widest mt-1">Found {delayedRecords.length} records pending `{'>'}` 7 days</p>
         </div>
         <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 transition-colors"><Icons.Close className="w-5 h-5" /></button>
       </div>
